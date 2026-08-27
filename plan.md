@@ -2,6 +2,15 @@
 
 Status: approved for implementation
 
+> **Architecture amendment — backend transport and hosting.** The backend is no
+> longer Next.js route handlers on Vercel with Supabase. It is a standalone
+> Java 21 / Spring Boot 3.3.5 service using plain PostgreSQL 16, with
+> Server-Sent Events in place of Supabase Realtime Broadcast. The canonical
+> company-profile contract remains at version `1`. Where this document still
+> describes Supabase, Vercel, or Realtime Broadcast, read
+> [`contracts/transport-amendment.md`](contracts/transport-amendment.md), which
+> supersedes those transport statements.
+
 This file is the canonical delivery plan. The active workstream plans under
 `workstreams/` refine ownership and sequencing but may not change the shared
 contracts in this document without an explicit integration decision.

@@ -37,9 +37,14 @@ import {
   mockSubmitCompanyContribution,
 } from "@/lib/mock-store";
 
+export const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+
 export const isMockMode =
-  process.env.NEXT_PUBLIC_USE_MOCK_API === "true" ||
-  !process.env.NEXT_PUBLIC_SUPABASE_URL;
+  process.env.NEXT_PUBLIC_USE_MOCK_API === "true" || !apiBaseUrl;
+
+export function apiUrl(path: string): string {
+  return `${apiBaseUrl}${path}`;
+}
 
 export class ApiClientError extends Error {
   constructor(
@@ -65,8 +70,9 @@ function mockError(error: unknown): never {
 async function request<T>(path: string, schema: ZodType<T>, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       ...init,
+      credentials: "include",
       headers: { "Content-Type": "application/json", ...init?.headers },
     });
   } catch {

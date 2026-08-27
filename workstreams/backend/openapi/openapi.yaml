@@ -1,0 +1,1537 @@
+openapi: 3.1.0
+
+info:
+  title: Sovereignty Lens API
+  version: 1.0.0
+  summary: Audience-participation dependency graph API for the Sovereignty Lens demo.
+  description: |
+    HTTP API of the Sovereignty Lens backend, a standalone Java 21 / Spring Boot 3
+    service backed by plain PostgreSQL.
+
+    **All data served by this API is simulated, unverified demo data.** Organizations
+    and dependencies are fictional or audience-submitted during a live presentation.
+    Nothing returned here is a factual claim about any real government body, company,
+    or supplier relationship, and it must never be presented as one.
+
+    ## Contract
+
+    Every request and response body conforms to **contract version `1`** of
+    `contracts/data-contract.md`, and every body carries `contractVersion: 1`.
+    Transport details for the live event stream are recorded in
+    `contracts/transport-amendment.md`; the event payloads themselves are unchanged
+    from contract version `1`.
+
+    Conventions:
+
+    - All IDs are lowercase UUID strings.
+    - All timestamps are UTC RFC 3339 / ISO 8601 strings.
+    - JSON is camelCase; the database is snake_case.
+    - Request and event schemas are strict: unknown fields are rejected.
+    - An edge always means `source organization depends on target organization`.
+      Reversing that direction is a breaking contract change.
+
+    ## Fixed error-code to HTTP-status mapping
+
+    Every failure returns an `ApiErrorResponse`. The mapping is fixed by the data
+    contract and is identical on every endpoint:
+
+    | Status | Error codes |
+    | --- | --- |
+    | `400` | `VALIDATION_ERROR` |
+    | `401` | `UNAUTHORIZED` |
+    | `403` | `FORBIDDEN` |
+    | `404` | `SESSION_NOT_FOUND`, `SOURCE_NOT_FOUND`, `NOT_FOUND` |
+    | `409` | `DUPLICATE_DEPENDENCY`, `ALREADY_CONTRIBUTED` |
+    | `423` | `SESSION_PAUSED` |
+    | `429` | `ROUND_CAPACITY_REACHED` |
+    | `500` | `INTERNAL_ERROR` |
+
+    Only `INTERNAL_ERROR` caused by a transient dependency, plus network-level
+    client errors, are retryable. Validation, duplicate, paused, and capacity errors
+    are not; `error.retryable` always reflects this.
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: '{publicBaseUrl}'
+    description: |
+      Deployed instance. Matches the `APP_PUBLIC_BASE_URL` server configuration
+      that `GET /api/qr` encodes into the QR code.
+    variables:
+      publicBaseUrl:
+        default: http://localhost:8080
+        description: Scheme, host and optional port of the deployed backend.
+
+tags:
+  - name: Public
+    description: Endpoints used by the presentation and the audience contribution form.
+  - name: Live
+    description: Server-Sent Events stream of committed graph changes.
+  - name: Utility
+    description: Health probe and QR code rendering.
+  - name: Admin
+    description: Presenter controls. Require the signed `sl_admin` cookie.
+
+paths:
+  /api/health:
+    get:
+      tags: [Utility]
+      operationId: getHealth
+      summary: Liveness and version probe
+      description: |
+        Unauthenticated probe used by container health checks and by the presenter
+        before a demo. Does not expose any session or database detail.
+      security: []
+      responses:
+        '200':
+          description: The service is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/sessions/{slug}/graph:
+    get:
+      tags: [Public]
+      operationId: getGraphSnapshot
+      summary: Read the authoritative public graph snapshot
+      description: |
+        The authoritative graph read. Used at initial load, after a
+        `graph.invalidated` event, after a reconnect, and during polling fallback.
+
+        The snapshot contains only seed edges with `status: "active"`, active
+        audience edges from `session.currentRound`, and the nodes those edges
+        reference plus the session root. Hidden edges, and nodes made unreachable
+        solely by hidden edges, are never included.
+
+        Arrays are ordered deterministically (nodes by creation time then ID, edges
+        by creation time then ID), but clients must identify records by ID, not by
+        position.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SessionSlug'
+      responses:
+        '200':
+          description: The current public graph for the session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphSnapshot'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/sessions/{slug}/company-contributions:
+    post:
+      tags: [Public]
+      operationId: createCompanyContribution
+      summary: Submit one European company profile
+      description: |
+        Atomically creates one European company, one to three incoming customer
+        connections, and one to three outgoing provider connections. The browser
+        may submit one profile per round. Every committed edge produces its own
+        durable `dependency.created` event; a failed profile produces no rows and
+        no events.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SessionSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyContributionRequest'
+      responses:
+        '201':
+          description: The complete profile was committed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyContributionResult'
+        '400':
+          description: '`VALIDATION_ERROR` — invalid profile, identifier, count, or organization type.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: '`SESSION_NOT_FOUND` or `SOURCE_NOT_FOUND`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: '`DUPLICATE_DEPENDENCY` or `ALREADY_CONTRIBUTED`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '423':
+          description: '`SESSION_PAUSED` — the presenter paused contributions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '429':
+          description: '`ROUND_CAPACITY_REACHED` — the profile would exceed the round capacity.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/sessions/{slug}/dependencies:
+    post:
+      tags: [Public]
+      operationId: createDependency
+      deprecated: true
+      summary: Submit one audience dependency
+      description: |
+        Accepts one audience contribution: the selected source organization gains one
+        dependency on a named target company.
+
+        `anonymousClientId` is a UUID generated and persisted by the browser. The
+        backend hashes it with a server-only secret before storage; it is never
+        returned and never appears in an event.
+
+        The whole submission is one database transaction. On commit the backend
+        returns the canonical node and edge and publishes exactly one
+        `dependency.created` event carrying the same `eventId`, `node.id` and
+        `edge.id`. A rollback persists neither the dependency nor the event.
+
+        Enforced invariants: the session must be open, the source must belong to the
+        session and be active, the browser may contribute at most once per session
+        round, the round holds at most 150 audience dependencies, source and target
+        may not be equal, the target organization type may not be `government`, and
+        one source/target edge may be active at most once per round.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SessionSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContributionRequest'
+      responses:
+        '201':
+          description: The dependency was committed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributionResult'
+        '400':
+          description: '`VALIDATION_ERROR` — invalid input, self-dependency, or a `government` target.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              examples:
+                validationError:
+                  summary: Company name too short
+                  value:
+                    contractVersion: 1
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Company name must contain 2 to 60 characters.
+                      retryable: false
+                      field: target.name
+        '404':
+          description: '`SESSION_NOT_FOUND` or `SOURCE_NOT_FOUND`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              examples:
+                sourceNotFound:
+                  summary: Source organization is not part of this session
+                  value:
+                    contractVersion: 1
+                    error:
+                      code: SOURCE_NOT_FOUND
+                      message: The selected organization is not part of this session.
+                      retryable: false
+                      field: sourceOrganizationId
+        '409':
+          description: '`DUPLICATE_DEPENDENCY` or `ALREADY_CONTRIBUTED`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              examples:
+                alreadyContributed:
+                  summary: This browser already contributed in the current round
+                  value:
+                    contractVersion: 1
+                    error:
+                      code: ALREADY_CONTRIBUTED
+                      message: This device already added a dependency in the current round.
+                      retryable: false
+                duplicateDependency:
+                  summary: The same edge is already active in this round
+                  value:
+                    contractVersion: 1
+                    error:
+                      code: DUPLICATE_DEPENDENCY
+                      message: That dependency has already been added in this round.
+                      retryable: false
+        '423':
+          description: '`SESSION_PAUSED` — the presenter paused contributions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              examples:
+                sessionPaused:
+                  summary: Session paused
+                  value:
+                    contractVersion: 1
+                    error:
+                      code: SESSION_PAUSED
+                      message: The presenter paused contributions.
+                      retryable: false
+        '429':
+          description: '`ROUND_CAPACITY_REACHED` — the current round already holds 150 audience dependencies.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              examples:
+                roundFull:
+                  summary: Round at capacity
+                  value:
+                    contractVersion: 1
+                    error:
+                      code: ROUND_CAPACITY_REACHED
+                      message: This round is full. Watch the presentation for the next one.
+                      retryable: false
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/sessions/{slug}/events:
+    get:
+      tags: [Live]
+      operationId: streamGraphEvents
+      summary: Server-Sent Events stream of committed graph changes
+      description: |
+        Long-lived `text/event-stream` response carrying every committed graph event
+        for the session. This replaces the Supabase Realtime Broadcast channel of the
+        original plan; the JSON payloads are byte-identical to contract version `1`.
+        See `contracts/transport-amendment.md`.
+
+        Framing of each message:
+
+        - `id:` — the event's `eventId`. Browsers resend it as `Last-Event-ID` on an
+          automatic reconnect, so the server can resume the stream.
+        - `event:` — the graph event name, `dependency.created` or
+          `graph.invalidated`. It duplicates the `event` field inside the JSON body.
+        - `data:` — one canonical JSON object conforming to
+          `#/components/schemas/GraphEvent`, serialized on a single line.
+
+        Every 15 seconds the server writes a comment heartbeat line `: ping` to keep
+        proxies from closing an idle stream. Comment lines carry no event and must be
+        ignored by consumers.
+
+        The stream is per-session, not per-round. The logical topic name
+        `sovereignty:<sessionSlug>:round:<round>` is preserved as a field-level
+        concept: **consumers must discard any event whose `sessionSlug` or `round`
+        does not match what they are currently displaying**, and then refetch a
+        snapshot.
+
+        Events are an acceleration hint only. `GET /api/sessions/{slug}/graph` is
+        always authoritative. On an unsupported `contractVersion`, a malformed
+        payload, or a `graph.invalidated` event, the consumer refetches the snapshot.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SessionSlug'
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: |
+            Sent automatically by `EventSource` after a dropped connection. Contains
+            the `eventId` of the last message the client received.
+          schema:
+            type: string
+            format: uuid
+          example: 9b7d4f21-3c8e-4d6a-b5f0-7e2c1a8d9034
+      responses:
+        '200':
+          description: |
+            An open event stream. Each `data:` payload conforms to
+            `#/components/schemas/GraphEvent`.
+          headers:
+            Cache-Control:
+              description: Always `no-cache` so intermediaries do not buffer the stream.
+              schema:
+                type: string
+                example: no-cache
+            Connection:
+              description: Always `keep-alive`.
+              schema:
+                type: string
+                example: keep-alive
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Raw Server-Sent Events stream. Each message consists of an `id:`
+                  line, an `event:` line, one `data:` line holding a JSON
+                  `GraphEvent`, and a blank terminator line. Heartbeats appear as
+                  `: ping` comment lines.
+                example: |
+                  : ping
+
+                  id: 9b7d4f21-3c8e-4d6a-b5f0-7e2c1a8d9034
+                  event: dependency.created
+                  data: {"contractVersion":1,"event":"dependency.created","eventId":"9b7d4f21-3c8e-4d6a-b5f0-7e2c1a8d9034","sessionSlug":"demo","round":3,"node":{"id":"8a9b0c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d","name":"Northwind Cloud Services","organizationType":"cloud","jurisdiction":"united_states","isSeed":false},"edge":{"id":"7f8e9d0c-1b2a-4c3d-8e5f-6a7b8c9d0e1f","sourceOrganizationId":"3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f","targetOrganizationId":"8a9b0c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d","isSeed":false,"status":"active","createdAt":"2026-08-27T10:15:30Z"},"occurredAt":"2026-08-27T10:15:30Z"}
+
+                  id: c4e2a180-5b93-4f07-9a6d-1d8b3f5e7c20
+                  event: graph.invalidated
+                  data: {"contractVersion":1,"event":"graph.invalidated","eventId":"c4e2a180-5b93-4f07-9a6d-1d8b3f5e7c20","sessionSlug":"demo","round":3,"reason":"hide","occurredAt":"2026-08-27T10:16:02Z"}
+          x-sse-data-schema:
+            $ref: '#/components/schemas/GraphEvent'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+
+  /api/qr:
+    get:
+      tags: [Utility]
+      operationId: getQrCode
+      summary: Render a QR code for the contribution or presentation route
+      description: |
+        Renders a QR code image that encodes `APP_PUBLIC_BASE_URL` joined with the
+        requested route, so an audience member can scan it from the projected
+        presentation and land directly on the form.
+
+        - `target=contribute` encodes `<APP_PUBLIC_BASE_URL>/contribute`
+        - `target=present` encodes `<APP_PUBLIC_BASE_URL>/present`
+
+        `APP_PUBLIC_BASE_URL` is server configuration, so the encoded URL is correct
+        for the running environment and cannot be influenced by the caller.
+      security: []
+      parameters:
+        - name: target
+          in: query
+          required: false
+          description: Which application route the QR code should encode.
+          schema:
+            type: string
+            enum: [contribute, present]
+            default: contribute
+          example: contribute
+        - name: format
+          in: query
+          required: false
+          description: Image format of the rendered code.
+          schema:
+            type: string
+            enum: [png, svg]
+            default: png
+          example: png
+      responses:
+        '200':
+          description: The rendered QR code image.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/svg+xml:
+              schema:
+                type: string
+                description: SVG document encoding the target URL.
+        '400':
+          description: '`VALIDATION_ERROR` — unknown `target` or `format` value.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /api/admin/login:
+    post:
+      tags: [Admin]
+      operationId: adminLogin
+      summary: Presenter login with the shared password
+      description: |
+        Validates the submitted password against the configured presenter password
+        using a constant-time comparison and, on success, sets the signed
+        `sl_admin` session cookie.
+
+        Failures return a generic `UNAUTHORIZED` error and never reveal which check
+        failed.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Authenticated. The signed admin session cookie is set.
+          headers:
+            Set-Cookie:
+              description: |
+                Signed presenter session cookie. Always `HttpOnly`, `SameSite=Lax`
+                and `Path=/`; `Secure` is added whenever the service is served over
+                HTTPS.
+              schema:
+                type: string
+                example: sl_admin=eyJzaWQiOiJkZW1vIn0.c2lnbmF0dXJl; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResult'
+        '400':
+          description: '`VALIDATION_ERROR` — missing or blank password.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/admin/logout:
+    post:
+      tags: [Admin]
+      operationId: adminLogout
+      summary: Clear the presenter session
+      description: |
+        Expires the `sl_admin` cookie. Always succeeds, whether or not a valid
+        session cookie was presented, so it can be called defensively by the admin
+        UI.
+      security: []
+      responses:
+        '200':
+          description: The session cookie was cleared.
+          headers:
+            Set-Cookie:
+              description: Expired `sl_admin` cookie.
+              schema:
+                type: string
+                example: sl_admin=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLogoutResult'
+
+  /api/admin/session:
+    get:
+      tags: [Admin]
+      operationId: getAdminSession
+      summary: Verify the presenter session
+      description: Returns the current demo session when the signed admin cookie is valid.
+      responses:
+        '200':
+          description: The presenter is authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSessionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/admin/sessions/{slug}/actions:
+    post:
+      tags: [Admin]
+      operationId: performAdminAction
+      summary: Run a presenter recovery action
+      description: |
+        Applies one presenter action and returns the resulting authoritative session
+        state.
+
+        - `pause` — set session status to `paused`; contributions return `423`.
+        - `resume` — set session status to `open`.
+        - `undo` — hide the newest active audience dependency of the current round.
+        - `reset` — increment `currentRound` and reopen the session. Reset never
+          deletes data; seed dependencies stay visible in every round.
+
+        Each action emits one `graph.invalidated` event on the session stream with
+        the matching reason. A reset event carries the **new** current round.
+      parameters:
+        - $ref: '#/components/parameters/SessionSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminActionRequest'
+      responses:
+        '200':
+          description: The action was applied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminActionResult'
+        '400':
+          description: '`VALIDATION_ERROR` — unknown action type, or nothing to undo.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/admin/sessions/{slug}/dependencies:
+    get:
+      tags: [Admin]
+      operationId: listAdminDependencies
+      summary: List current-round audience dependencies for review
+      description: |
+        Returns all current-round, non-seed dependencies, **including hidden
+        entries**, ordered newest first, each expanded with its source and target
+        node so the presenter can moderate without a second lookup.
+      parameters:
+        - $ref: '#/components/parameters/SessionSlug'
+      responses:
+        '200':
+          description: The moderation list for the current round.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDependencyList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+
+  /api/admin/dependencies/{id}:
+    patch:
+      tags: [Admin]
+      operationId: updateDependencyStatus
+      summary: Hide or restore one audience dependency
+      description: |
+        Sets the visibility of one dependency. Only a current-round, non-seed
+        dependency can be modified; seed edges and edges from earlier rounds return
+        `404`.
+
+        Hiding emits `graph.invalidated` with reason `hide`, restoring with reason
+        `restore`. Hidden edges disappear from public snapshots along with any nodes
+        made unreachable solely by them.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Dependency (edge) ID.
+          schema:
+            type: string
+            format: uuid
+          example: 7f8e9d0c-1b2a-4c3d-8e5f-6a7b8c9d0e1f
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DependencyStatusRequest'
+      responses:
+        '200':
+          description: The new canonical edge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyStatusResult'
+        '400':
+          description: '`VALIDATION_ERROR` — unknown status value.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: '`NOT_FOUND` — no such current-round, non-seed dependency.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+              examples:
+                notFound:
+                  summary: Not a current-round audience dependency
+                  value:
+                    contractVersion: 1
+                    error:
+                      code: NOT_FOUND
+                      message: No editable dependency with that ID in the current round.
+                      retryable: false
+
+security:
+  - adminSession: []
+
+components:
+
+  securitySchemes:
+    adminSession:
+      type: apiKey
+      in: cookie
+      name: sl_admin
+      description: |
+        Signed, `HttpOnly`, `SameSite=Lax` presenter session cookie issued by
+        `POST /api/admin/login`. Required by every `/api/admin/**` endpoint except
+        login and logout. A missing, malformed, expired, or badly signed cookie
+        yields `401` with error code `UNAUTHORIZED`.
+
+  parameters:
+    SessionSlug:
+      name: slug
+      in: path
+      required: true
+      description: URL-safe session slug. The demo session is `demo`.
+      schema:
+        type: string
+        pattern: '^[a-z0-9][a-z0-9-]{0,62}$'
+      example: demo
+
+  responses:
+    Unauthorized:
+      description: '`UNAUTHORIZED` — missing or invalid presenter session.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            unauthorized:
+              summary: No valid admin cookie
+              value:
+                contractVersion: 1
+                error:
+                  code: UNAUTHORIZED
+                  message: Presenter authentication required.
+                  retryable: false
+
+    SessionNotFound:
+      description: '`SESSION_NOT_FOUND` — no session with that slug.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            sessionNotFound:
+              summary: Unknown slug
+              value:
+                contractVersion: 1
+                error:
+                  code: SESSION_NOT_FOUND
+                  message: No session with that slug.
+                  retryable: false
+                  field: slug
+
+    InternalError:
+      description: '`INTERNAL_ERROR` — unexpected server failure. Retryable when transient.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            internalError:
+              summary: Transient failure
+              value:
+                contractVersion: 1
+                error:
+                  code: INTERNAL_ERROR
+                  message: Temporary server problem. Please try again.
+                  retryable: true
+
+  schemas:
+
+    ContractVersion:
+      type: integer
+      enum: [1]
+      description: Wire contract version. Always `1` for this specification.
+      example: 1
+
+    Jurisdiction:
+      type: string
+      description: |
+        Where an organization is legally established. `united_states`, `china` and
+        `other_external` count as external exposure. `europe` and `unknown` do not:
+        unknown means unresolved, not European.
+      enum:
+        - europe
+        - united_states
+        - china
+        - other_external
+        - unknown
+      example: europe
+
+    OrganizationType:
+      type: string
+      description: Sector of an organization.
+      enum:
+        - government
+        - cloud
+        - software
+        - hardware
+        - telecom
+        - consulting
+        - logistics
+        - finance
+        - other
+      example: cloud
+
+    ContributionTargetType:
+      type: string
+      description: |
+        Sector of an audience-submitted target company. Identical to
+        `OrganizationType` minus `government`: only seeded roots may be governments,
+        so the audience API rejects a `government` target with `VALIDATION_ERROR`.
+      enum:
+        - cloud
+        - software
+        - hardware
+        - telecom
+        - consulting
+        - logistics
+        - finance
+        - other
+      example: cloud
+
+    SessionStatus:
+      type: string
+      description: Session lifecycle state. `paused` makes contributions return `423`.
+      enum: [open, paused]
+      example: open
+
+    DependencyStatus:
+      type: string
+      description: Visibility state of a dependency edge. Hidden edges never appear in public snapshots.
+      enum: [active, hidden]
+      example: active
+
+    AdminActionType:
+      type: string
+      description: Presenter recovery action.
+      enum: [pause, resume, reset, undo]
+      example: pause
+
+    AdminInvalidationReason:
+      type: string
+      description: Why a `graph.invalidated` event was emitted.
+      enum: [pause, resume, hide, restore, undo, reset]
+      example: hide
+
+    ApiErrorCode:
+      type: string
+      description: |
+        Canonical error code. The HTTP status is fixed per code; see the fixed
+        mapping table in the API description.
+      enum:
+        - VALIDATION_ERROR
+        - SESSION_NOT_FOUND
+        - SOURCE_NOT_FOUND
+        - DUPLICATE_DEPENDENCY
+        - ALREADY_CONTRIBUTED
+        - SESSION_PAUSED
+        - ROUND_CAPACITY_REACHED
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - NOT_FOUND
+        - INTERNAL_ERROR
+      example: VALIDATION_ERROR
+
+    ApiErrorResponse:
+      type: object
+      description: Uniform error envelope used by every endpoint.
+      additionalProperties: false
+      required: [contractVersion, error]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, retryable]
+          properties:
+            code:
+              $ref: '#/components/schemas/ApiErrorCode'
+            message:
+              type: string
+              description: Human-readable message safe to show to an audience member.
+              example: Company name must contain 2 to 60 characters.
+            retryable:
+              type: boolean
+              description: |
+                True only for transient `INTERNAL_ERROR` failures. Validation,
+                duplicate, paused and capacity errors are never retryable.
+              example: false
+            field:
+              type: string
+              description: |
+                Omitted unless the failure is attributable to exactly one request
+                field. Uses dotted JSON paths.
+              example: target.name
+
+    HealthResponse:
+      type: object
+      description: Liveness probe payload.
+      required: [status, version, time]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Always `ok`; an unhealthy service fails the request instead.
+          example: ok
+        version:
+          type: string
+          description: Build version of the running backend.
+          example: 1.0.0
+        time:
+          type: string
+          format: date-time
+          description: Current UTC server time, useful for spotting clock skew before a demo.
+          example: '2026-08-27T10:15:30Z'
+
+    SessionSummary:
+      type: object
+      description: Authoritative session state.
+      required: [id, slug, title, status, currentRound, rootOrganizationId]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 6f1b3c2a-9d54-4a7e-8b21-2f0c5d7e9a10
+        slug:
+          type: string
+          example: demo
+        title:
+          type: string
+          example: European Digital Services Agency dependency demo
+        status:
+          $ref: '#/components/schemas/SessionStatus'
+        currentRound:
+          type: integer
+          minimum: 1
+          description: Positive integer. Reset increments it; earlier rounds are preserved.
+          example: 3
+        rootOrganizationId:
+          type: string
+          format: uuid
+          description: The seed government node the presentation traverses from.
+          example: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+
+    GraphNode:
+      type: object
+      description: An organization rendered as a graph node.
+      required: [id, name, organizationType, jurisdiction, isSeed]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+        name:
+          type: string
+          minLength: 2
+          maxLength: 60
+          description: Trimmed display name, 2 to 60 Unicode characters. Always rendered as text.
+          example: Baltic Data Works
+        organizationType:
+          $ref: '#/components/schemas/OrganizationType'
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        isSeed:
+          type: boolean
+          description: True for fictional seed organizations, false for audience submissions.
+          example: true
+
+    GraphEdge:
+      type: object
+      description: |
+        A dependency rendered as a directed edge. It always means
+        `sourceOrganizationId depends on targetOrganizationId`.
+      required: [id, sourceOrganizationId, targetOrganizationId, isSeed, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 5e6f7081-92a3-4ebf-80c1-4c5d6e7f8091
+        sourceOrganizationId:
+          type: string
+          format: uuid
+          description: The organization that depends on the target.
+          example: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        targetOrganizationId:
+          type: string
+          format: uuid
+          description: The organization depended upon.
+          example: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+        isSeed:
+          type: boolean
+          example: true
+        status:
+          $ref: '#/components/schemas/DependencyStatus'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-08-27T09:00:00Z'
+
+    GraphSnapshot:
+      type: object
+      description: |
+        Authoritative public graph read. Every edge references nodes present in the
+        same snapshot.
+      required: [contractVersion, session, nodes, edges, serverTime]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        session:
+          $ref: '#/components/schemas/SessionSummary'
+        nodes:
+          type: array
+          description: Ordered by creation time, then ID.
+          items:
+            $ref: '#/components/schemas/GraphNode'
+        edges:
+          type: array
+          description: Ordered by creation time, then ID.
+          items:
+            $ref: '#/components/schemas/GraphEdge'
+        serverTime:
+          type: string
+          format: date-time
+          example: '2026-08-27T10:15:31Z'
+      example:
+        contractVersion: 1
+        session:
+          id: 6f1b3c2a-9d54-4a7e-8b21-2f0c5d7e9a10
+          slug: demo
+          title: European Digital Services Agency dependency demo
+          status: open
+          currentRound: 3
+          rootOrganizationId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        nodes:
+          - id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+            name: European Digital Services Agency
+            organizationType: government
+            jurisdiction: europe
+            isSeed: true
+          - id: 2b3c4d5e-6f70-4b8c-9dae-1f2a3b4c5d6e
+            name: Alpine Civic Systems
+            organizationType: software
+            jurisdiction: europe
+            isSeed: true
+          - id: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+            name: Baltic Data Works
+            organizationType: cloud
+            jurisdiction: europe
+            isSeed: true
+          - id: 4d5e6f70-8192-4dae-9fb0-3b4c5d6e7f80
+            name: Rhine Public Networks
+            organizationType: telecom
+            jurisdiction: europe
+            isSeed: true
+        edges:
+          - id: 5e6f7081-92a3-4ebf-80c1-4c5d6e7f8091
+            sourceOrganizationId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+            targetOrganizationId: 2b3c4d5e-6f70-4b8c-9dae-1f2a3b4c5d6e
+            isSeed: true
+            status: active
+            createdAt: '2026-08-27T09:00:00Z'
+          - id: 6f708192-a3b4-4fc0-91d2-5d6e7f809102
+            sourceOrganizationId: 2b3c4d5e-6f70-4b8c-9dae-1f2a3b4c5d6e
+            targetOrganizationId: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+            isSeed: true
+            status: active
+            createdAt: '2026-08-27T09:00:01Z'
+          - id: 708192a3-b4c5-40d1-82e3-6e7f80910213
+            sourceOrganizationId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+            targetOrganizationId: 4d5e6f70-8192-4dae-9fb0-3b4c5d6e7f80
+            isSeed: true
+            status: active
+            createdAt: '2026-08-27T09:00:02Z'
+        serverTime: '2026-08-27T10:15:31Z'
+
+    ContributionRequest:
+      type: object
+      description: One audience submission. Unknown fields are rejected.
+      additionalProperties: false
+      required: [contractVersion, anonymousClientId, sourceOrganizationId, target]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        anonymousClientId:
+          type: string
+          format: uuid
+          description: |
+            UUID generated and persisted by the browser in local storage. Hashed with
+            a server secret before storage; never returned and never broadcast.
+          example: b1c9f0d2-7a44-4e6b-9c31-5d0e8f2a6b73
+        sourceOrganizationId:
+          type: string
+          format: uuid
+          description: An existing active organization of this session that gains the dependency.
+          example: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+        target:
+          type: object
+          description: The company the source organization depends on.
+          additionalProperties: false
+          required: [name, organizationType, jurisdiction]
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 60
+              description: |
+                Trimmed to 2 to 60 Unicode characters. Normalized for
+                case-insensitive uniqueness inside the session; an existing match is
+                reused rather than duplicated.
+              example: Northwind Cloud Services
+            organizationType:
+              $ref: '#/components/schemas/ContributionTargetType'
+            jurisdiction:
+              $ref: '#/components/schemas/Jurisdiction'
+      example:
+        contractVersion: 1
+        anonymousClientId: b1c9f0d2-7a44-4e6b-9c31-5d0e8f2a6b73
+        sourceOrganizationId: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+        target:
+          name: Northwind Cloud Services
+          organizationType: cloud
+          jurisdiction: united_states
+
+    ContributionResult:
+      type: object
+      description: |
+        Canonical persisted result. `eventId`, `node.id` and `edge.id` exactly match
+        the corresponding `dependency.created` event, so a client that receives both
+        applies them idempotently.
+      required: [contractVersion, eventId, round, node, edge]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        eventId:
+          type: string
+          format: uuid
+          example: 9b7d4f21-3c8e-4d6a-b5f0-7e2c1a8d9034
+        round:
+          type: integer
+          minimum: 1
+          example: 3
+        node:
+          $ref: '#/components/schemas/GraphNode'
+        edge:
+          $ref: '#/components/schemas/GraphEdge'
+      example:
+        contractVersion: 1
+        eventId: 9b7d4f21-3c8e-4d6a-b5f0-7e2c1a8d9034
+        round: 3
+        node:
+          id: 8a9b0c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d
+          name: Northwind Cloud Services
+          organizationType: cloud
+          jurisdiction: united_states
+          isSeed: false
+        edge:
+          id: 7f8e9d0c-1b2a-4c3d-8e5f-6a7b8c9d0e1f
+          sourceOrganizationId: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+          targetOrganizationId: 8a9b0c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d
+          isSeed: false
+          status: active
+          createdAt: '2026-08-27T10:15:30Z'
+
+    CompanyContributionRequest:
+      type: object
+      description: One atomic company-profile contribution. Unknown fields are rejected.
+      additionalProperties: false
+      required: [contractVersion, anonymousClientId, company, customerOrganizationIds, dependencies]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        anonymousClientId:
+          type: string
+          format: uuid
+        company:
+          type: object
+          additionalProperties: false
+          required: [name, organizationType, jurisdiction]
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 60
+            organizationType:
+              $ref: '#/components/schemas/ContributionTargetType'
+            jurisdiction:
+              type: string
+              enum: [europe]
+        customerOrganizationIds:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        dependencies:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, organizationType, jurisdiction]
+            properties:
+              name:
+                type: string
+                minLength: 2
+                maxLength: 60
+              organizationType:
+                $ref: '#/components/schemas/ContributionTargetType'
+              jurisdiction:
+                $ref: '#/components/schemas/Jurisdiction'
+
+    CompanyContributionConnection:
+      type: object
+      additionalProperties: false
+      required: [eventId, node, edge]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        node:
+          $ref: '#/components/schemas/GraphNode'
+        edge:
+          $ref: '#/components/schemas/GraphEdge'
+
+    CompanyContributionResult:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, round, company, customerConnections, dependencyConnections]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        round:
+          type: integer
+          minimum: 1
+        company:
+          $ref: '#/components/schemas/GraphNode'
+        customerConnections:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/CompanyContributionConnection'
+        dependencyConnections:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/CompanyContributionConnection'
+
+    DependencyCreatedEvent:
+      type: object
+      description: |
+        Emitted exactly once for a committed contribution and never for a rolled-back
+        one. Carries the same canonical node and edge as the HTTP success response.
+      additionalProperties: false
+      required: [contractVersion, event, eventId, sessionSlug, round, node, edge, occurredAt]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        event:
+          type: string
+          enum: [dependency.created]
+          example: dependency.created
+        eventId:
+          type: string
+          format: uuid
+          description: Also sent as the SSE `id:` field, enabling `Last-Event-ID` resume.
+          example: 9b7d4f21-3c8e-4d6a-b5f0-7e2c1a8d9034
+        sessionSlug:
+          type: string
+          description: Consumers discard events for another session.
+          example: demo
+        round:
+          type: integer
+          minimum: 1
+          description: |
+            Consumers discard events for a round other than the one being displayed.
+            With `sessionSlug` this reproduces the logical topic
+            `sovereignty:<sessionSlug>:round:<round>`.
+          example: 3
+        node:
+          $ref: '#/components/schemas/GraphNode'
+        edge:
+          $ref: '#/components/schemas/GraphEdge'
+        occurredAt:
+          type: string
+          format: date-time
+          example: '2026-08-27T10:15:30Z'
+
+    GraphInvalidatedEvent:
+      type: object
+      description: |
+        Emitted by admin mutations. Carries no graph records: consumers refetch the
+        authoritative snapshot immediately. On reset it already uses the new current
+        round.
+      additionalProperties: false
+      required: [contractVersion, event, eventId, sessionSlug, round, reason, occurredAt]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        event:
+          type: string
+          enum: [graph.invalidated]
+          example: graph.invalidated
+        eventId:
+          type: string
+          format: uuid
+          description: Also sent as the SSE `id:` field.
+          example: c4e2a180-5b93-4f07-9a6d-1d8b3f5e7c20
+        sessionSlug:
+          type: string
+          example: demo
+        round:
+          type: integer
+          minimum: 1
+          example: 3
+        reason:
+          $ref: '#/components/schemas/AdminInvalidationReason'
+        occurredAt:
+          type: string
+          format: date-time
+          example: '2026-08-27T10:16:02Z'
+
+    GraphEvent:
+      description: |
+        A live graph event, delivered as the `data:` payload of one Server-Sent
+        Event. Discriminated by the `event` field, which is also mirrored in the SSE
+        `event:` field.
+
+        Events are an acceleration hint only; `GraphSnapshot` is always
+        authoritative.
+      oneOf:
+        - $ref: '#/components/schemas/DependencyCreatedEvent'
+        - $ref: '#/components/schemas/GraphInvalidatedEvent'
+      discriminator:
+        propertyName: event
+        mapping:
+          dependency.created: '#/components/schemas/DependencyCreatedEvent'
+          graph.invalidated: '#/components/schemas/GraphInvalidatedEvent'
+
+    AdminLoginRequest:
+      type: object
+      description: Shared-password presenter login. Unknown fields are rejected.
+      additionalProperties: false
+      required: [contractVersion, password]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        password:
+          type: string
+          minLength: 1
+          format: password
+          description: The shared presenter password. Compared in constant time; never logged.
+          example: correct-horse-battery-staple
+      example:
+        contractVersion: 1
+        password: correct-horse-battery-staple
+
+    AdminLoginResult:
+      type: object
+      description: Successful login. The session itself lives in the signed `sl_admin` cookie.
+      required: [contractVersion, authenticated]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        authenticated:
+          type: boolean
+          enum: [true]
+          example: true
+      example:
+        contractVersion: 1
+        authenticated: true
+
+    AdminSessionResult:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, authenticated, session]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        authenticated:
+          type: boolean
+          enum: [true]
+        session:
+          $ref: '#/components/schemas/SessionSummary'
+
+    AdminLogoutResult:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, authenticated]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        authenticated:
+          type: boolean
+          enum: [false]
+
+    AdminActionRequest:
+      type: object
+      description: One presenter action, wrapped in a discriminated `action` object.
+      additionalProperties: false
+      required: [contractVersion, action]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        action:
+          type: object
+          additionalProperties: false
+          required: [type]
+          properties:
+            type:
+              $ref: '#/components/schemas/AdminActionType'
+      example:
+        contractVersion: 1
+        action:
+          type: pause
+
+    AdminActionResult:
+      type: object
+      description: |
+        Result of a presenter action, including the resulting authoritative session
+        state. `eventId` matches the emitted `graph.invalidated` event.
+      required: [contractVersion, eventId, session]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        eventId:
+          type: string
+          format: uuid
+          example: c4e2a180-5b93-4f07-9a6d-1d8b3f5e7c20
+        session:
+          $ref: '#/components/schemas/SessionSummary'
+      example:
+        contractVersion: 1
+        eventId: c4e2a180-5b93-4f07-9a6d-1d8b3f5e7c20
+        session:
+          id: 6f1b3c2a-9d54-4a7e-8b21-2f0c5d7e9a10
+          slug: demo
+          title: European Digital Services Agency dependency demo
+          status: paused
+          currentRound: 3
+          rootOrganizationId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+
+    DependencyStatusRequest:
+      type: object
+      description: Hide or restore one current-round audience dependency.
+      additionalProperties: false
+      required: [contractVersion, status]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        status:
+          $ref: '#/components/schemas/DependencyStatus'
+      example:
+        contractVersion: 1
+        status: hidden
+
+    DependencyStatusResult:
+      type: object
+      description: |
+        Result of a hide or restore action. `eventId` matches the emitted
+        `graph.invalidated` event.
+      required: [contractVersion, eventId, edge]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        eventId:
+          type: string
+          format: uuid
+          example: d5f3b291-6ca4-4018-8b7e-2e9c4a6f8d31
+        edge:
+          $ref: '#/components/schemas/GraphEdge'
+      example:
+        contractVersion: 1
+        eventId: d5f3b291-6ca4-4018-8b7e-2e9c4a6f8d31
+        edge:
+          id: 7f8e9d0c-1b2a-4c3d-8e5f-6a7b8c9d0e1f
+          sourceOrganizationId: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+          targetOrganizationId: 8a9b0c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d
+          isSeed: false
+          status: hidden
+          createdAt: '2026-08-27T10:15:30Z'
+
+    AdminDependency:
+      type: object
+      description: One audience dependency expanded with both endpoints for presenter review.
+      required: [edge, source, target]
+      properties:
+        edge:
+          $ref: '#/components/schemas/GraphEdge'
+        source:
+          $ref: '#/components/schemas/GraphNode'
+        target:
+          $ref: '#/components/schemas/GraphNode'
+
+    AdminDependencyList:
+      type: object
+      description: |
+        All current-round, non-seed dependencies including hidden entries, ordered
+        newest first.
+      required: [contractVersion, session, dependencies]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        session:
+          $ref: '#/components/schemas/SessionSummary'
+        dependencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminDependency'
+      example:
+        contractVersion: 1
+        session:
+          id: 6f1b3c2a-9d54-4a7e-8b21-2f0c5d7e9a10
+          slug: demo
+          title: European Digital Services Agency dependency demo
+          status: open
+          currentRound: 3
+          rootOrganizationId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        dependencies:
+          - edge:
+              id: 7f8e9d0c-1b2a-4c3d-8e5f-6a7b8c9d0e1f
+              sourceOrganizationId: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+              targetOrganizationId: 8a9b0c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d
+              isSeed: false
+              status: active
+              createdAt: '2026-08-27T10:15:30Z'
+            source:
+              id: 3c4d5e6f-7081-4c9d-8eaf-2a3b4c5d6e7f
+              name: Baltic Data Works
+              organizationType: cloud
+              jurisdiction: europe
+              isSeed: true
+            target:
+              id: 8a9b0c1d-2e3f-4a5b-8c7d-6e5f4a3b2c1d
+              name: Northwind Cloud Services
+              organizationType: cloud
+              jurisdiction: united_states
+              isSeed: false
+          - edge:
+              id: 9e0f1a2b-3c4d-4e5f-8091-a2b3c4d5e6f7
+              sourceOrganizationId: 4d5e6f70-8192-4dae-9fb0-3b4c5d6e7f80
+              targetOrganizationId: 0f1a2b3c-4d5e-4f60-9182-b3c4d5e6f708
+              isSeed: false
+              status: hidden
+              createdAt: '2026-08-27T10:14:02Z'
+            source:
+              id: 4d5e6f70-8192-4dae-9fb0-3b4c5d6e7f80
+              name: Rhine Public Networks
+              organizationType: telecom
+              jurisdiction: europe
+              isSeed: true
+            target:
+              id: 0f1a2b3c-4d5e-4f60-9182-b3c4d5e6f708
+              name: Meridian Handset Works
+              organizationType: hardware
+              jurisdiction: china
+              isSeed: false

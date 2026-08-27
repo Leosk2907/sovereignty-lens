@@ -2,11 +2,30 @@ node_modules/
 .next/
 out/
 coverage/
-playwright-report/
-test-results/
 .env
 .env.local
 .env.*.local
 .vercel/
 .DS_Store
 *.tsbuildinfo
+
+# Java backend
+workstreams/backend/target/
+**/target/
+
+# Local environment
+**/.env
+**/.env.local
+
+# Node workspaces
+**/node_modules/
+
+# Test artifacts
+**/test-results/
+**/playwright-report/
+
+# Editors and operating systems
+.idea/
+*.iml
+.vscode/
+Thumbs.db

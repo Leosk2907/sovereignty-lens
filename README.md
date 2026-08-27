@@ -10,9 +10,17 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Without Supabase variables,
+Open [http://localhost:3000](http://localhost:3000). Without an API base URL,
 the app uses its browser-based demo transport. The mock admin password is
 `demo`.
+
+To run against the persistent Spring/PostgreSQL backend, start the stack in
+`workstreams/backend`, then set:
+
+```text
+NEXT_PUBLIC_USE_MOCK_API=false
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
+```
 
 ## Routes
 
@@ -32,8 +40,8 @@ npm run test:e2e
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` to connect the frontend to the production
-API and Supabase Realtime. Never commit real credentials.
+Copy `.env.example` to `.env.local` to connect the frontend to the backend HTTP
+API and Server-Sent Events stream. Never commit real credentials.
 
 See [plan.md](./plan.md) for the delivery plan and
 [contracts/data-contract.md](./contracts/data-contract.md) for the canonical

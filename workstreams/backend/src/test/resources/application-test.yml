@@ -1,0 +1,29 @@
+# Test-only configuration.
+#
+# The application deliberately has no fallback for any secret, so a test context
+# has to supply them. These values are fixtures, not credentials: they are not
+# used by any deployment and must never be copied into .env.
+app:
+  admin-password: test-presenter-password
+  auth-secret: test-auth-secret-that-is-long-enough-32
+  contributor-hash-secret: test-contributor-secret-long-enough-32
+  public-base-url: http://localhost:3000
+  cors-allowed-origins: http://localhost:3000
+  round-capacity: 150
+  admin-session-ttl: PT8H
+  # Short enough that a heartbeat test does not have to wait 15 seconds.
+  sse-heartbeat-interval: PT1S
+  sse-connection-timeout: PT30S
+
+spring:
+  flyway:
+    enabled: true
+    # Clean between test classes is unnecessary: each test container starts empty
+    # and Flyway applies the same migrations a deployment would.
+    locations: classpath:db/migration
+
+logging:
+  level:
+    eu.sovereigntylens: DEBUG
+    org.testcontainers: WARN
+    com.github.dockerjava: WARN
