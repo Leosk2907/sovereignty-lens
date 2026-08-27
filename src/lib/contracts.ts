@@ -72,24 +72,41 @@ export const graphSnapshotSchema = z.strictObject({
 });
 
 const audienceOrganizationTypeSchema = organizationTypeSchema.exclude(["government"]);
+const companyNameSchema = z.string().trim().min(2).max(60);
 
-export const contributionRequestSchema = z.strictObject({
-  contractVersion: versionSchema,
-  anonymousClientId: uuidSchema,
-  sourceOrganizationId: uuidSchema,
-  target: z.strictObject({
-    name: z.string().trim().min(2).max(60),
-    organizationType: audienceOrganizationTypeSchema,
-    jurisdiction: jurisdictionSchema,
-  }),
+export const MAX_CUSTOMERS = 3;
+export const MAX_DEPENDENCIES = 3;
+
+export const companyDependencySchema = z.strictObject({
+  name: companyNameSchema,
+  organizationType: audienceOrganizationTypeSchema,
+  jurisdiction: jurisdictionSchema,
 });
 
-export const contributionResultSchema = z.strictObject({
+export const companyContributionRequestSchema = z.strictObject({
   contractVersion: versionSchema,
+  anonymousClientId: uuidSchema,
+  company: z.strictObject({
+    name: companyNameSchema,
+    organizationType: audienceOrganizationTypeSchema,
+    jurisdiction: z.literal("europe"),
+  }),
+  customerOrganizationIds: z.array(uuidSchema).min(1).max(MAX_CUSTOMERS),
+  dependencies: z.array(companyDependencySchema).min(1).max(MAX_DEPENDENCIES),
+});
+
+export const companyContributionConnectionSchema = z.strictObject({
   eventId: uuidSchema,
-  round: z.number().int().positive(),
   node: graphNodeSchema,
   edge: graphEdgeSchema,
+});
+
+export const companyContributionResultSchema = z.strictObject({
+  contractVersion: versionSchema,
+  round: z.number().int().positive(),
+  company: graphNodeSchema,
+  customerConnections: z.array(companyContributionConnectionSchema).min(1).max(MAX_CUSTOMERS),
+  dependencyConnections: z.array(companyContributionConnectionSchema).min(1).max(MAX_DEPENDENCIES),
 });
 
 export const apiErrorCodeSchema = z.enum([
@@ -213,8 +230,10 @@ export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type GraphNode = z.infer<typeof graphNodeSchema>;
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 export type GraphSnapshot = z.infer<typeof graphSnapshotSchema>;
-export type ContributionRequest = z.infer<typeof contributionRequestSchema>;
-export type ContributionResult = z.infer<typeof contributionResultSchema>;
+export type CompanyDependency = z.infer<typeof companyDependencySchema>;
+export type CompanyContributionRequest = z.infer<typeof companyContributionRequestSchema>;
+export type CompanyContributionConnection = z.infer<typeof companyContributionConnectionSchema>;
+export type CompanyContributionResult = z.infer<typeof companyContributionResultSchema>;
 export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
 export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
 export type DependencyCreatedEvent = z.infer<typeof dependencyCreatedEventSchema>;

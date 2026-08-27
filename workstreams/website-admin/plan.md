@@ -45,14 +45,18 @@ authoritative. Import all types and Zod schemas from `src/lib/contracts.ts`.
 3. Implement one `useLiveGraph` controller shared by public and admin modes.
 4. Build `/` as the full-screen presentation with metrics, reveal, QR,
    connection health, and disclaimer.
-5. Build `/contribute` with search, anonymous identity, 50/50 jurisdiction
-   options, strict validation, error mapping, and success state.
+5. Build `/contribute` with the shared three-section company-profile flow: one
+   new European company, one-to-three existing European customers, one-to-three
+   dependencies, anonymous identity, strict validation, and success state.
 6. Build `/about` and disclose the prototype's own dependencies.
 7. Build `/admin` with same-route login, shared graph, session controls,
    dependency moderation, URL tools, logout, and reset confirmation.
 8. Redirect `/present` to `/`.
 9. Add unit/component/end-to-end tests and verify at mobile and presentation
    dimensions.
+10. Refine the live experience into a deep-ink, graph-first visual system with
+    Geist typography, a unified Europe/external/unknown palette, incremental
+    Cytoscape interaction, and focused Motion transitions.
 
 ## Acceptance criteria
 
@@ -62,6 +66,7 @@ authoritative. Import all types and Zod schemas from `src/lib/contracts.ts`.
 - Reconnect and malformed events reconcile from the database snapshot.
 - Admin controls cannot be used before authentication.
 - Pause, resume, hide, restore, undo, reset, and logout have stable states.
-- Contribution behavior follows the canonical contract and one-per-round rule.
+- Contribution behavior follows `CompanyContributionRequest`, submits one atomic
+  batch, and enforces the one-profile-per-browser-per-round rule.
 - Untrusted names render only as text.
 - Lint, typecheck, unit tests, Playwright tests, and production build pass.

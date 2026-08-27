@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ContributionForm } from "@/components/contribution-form";
+import { CompanyContributionForm } from "@/components/company-contribution-form";
 
-export const metadata: Metadata = { title: "Add a dependency" };
+export const metadata: Metadata = { title: "Add your company" };
 
 export default function ContributePage() {
-  return <ContributionForm />;
+  return <CompanyContributionForm />;
 }

@@ -29,9 +29,9 @@ Do not implement the audience, Cytoscape, or admin page UI.
 authoritative. This workstream owns the shared TypeScript/Zod implementation but
 may not change its semantics without a coordinated contract update.
 
-- Accept `ContributionRequest`, `AdminLoginRequest`, `AdminActionRequest`, and
+- Accept `CompanyContributionRequest`, `AdminLoginRequest`, `AdminActionRequest`, and
   `DependencyStatusRequest` exactly as versioned and strict schemas.
-- Return `GraphSnapshot`, `ContributionResult`, `AdminLoginResult`,
+- Return `GraphSnapshot`, `CompanyContributionResult`, `AdminLoginResult`,
   `AdminActionResult`, `AdminDependencyList`, `DependencyStatusResult`, or
   `ApiErrorResponse` with the documented status mapping.
 - Emit only `DependencyCreatedEvent` and `GraphInvalidatedEvent` on the canonical
@@ -54,12 +54,14 @@ may not change its semantics without a coordinated contract update.
 4. Implement the exact canonical data contract with strict Zod schemas and
    exported TypeScript types in one shared module.
 5. Add deterministic fixture builders for one seeded graph and API errors.
-6. Initialize Supabase and create the three tables, constraints, indexes,
+6. Initialize Supabase and create the four tables, constraints, indexes,
    timestamp behavior, RLS policies, and Realtime Broadcast configuration.
 7. Seed one `demo` session rooted at `European Digital Services Agency`, three
    fictional European suppliers, and connected seed dependencies.
-8. Implement the transactional submission SQL function. In the same transaction,
-   insert the dependency and call `realtime.send()` with a versioned canonical
+8. Implement the transactional company-profile SQL function. In one transaction,
+   insert the contribution and European company, connect one-to-three existing
+   European customers, upsert one-to-three providers, insert every dependency,
+   and call `realtime.send()` once per edge with a versioned canonical
    `dependency.created` payload on `sovereignty:demo:round:<round>`.
 9. Emit `graph.invalidated` from admin mutation transactions for pause, resume,
    hide, restore, undo, and reset.
@@ -96,10 +98,9 @@ participation.
   payloads map to the canonical version `1` shapes.
 - Every endpoint returns a consistent JSON success/error envelope.
 - Submission is atomic under concurrent requests.
-- A committed submission produces exactly one versioned Broadcast event with
-  identifiers matching the API response and stored rows.
-- A rolled-back submission produces neither a stored dependency nor a live
-  event.
+- A committed profile produces exactly one versioned Broadcast event per edge,
+  with identifiers matching the API response and stored rows.
+- A rolled-back profile produces neither stored profile data nor live events.
 - Anonymous database clients cannot insert, update, or delete.
 - Service-role and presenter secrets never enter client bundles or logs.
 - Preview deployment returns the seeded graph and accepts a valid dependency.

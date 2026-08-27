@@ -12,10 +12,11 @@ Build and deploy an audience-participation prototype that demonstrates how a
 fictional European governmental body can be indirectly dependent on companies
 outside Europe.
 
-The presenter displays a live graph. Audience members scan a QR code, select an
-existing organization, and add one company it depends on. When a directed path
-from the fictional government body reaches a non-European company, the
-presentation highlights the complete hidden dependency chain.
+The presenter displays a live graph. Audience members scan a QR code, add their
+European company, connect one to three existing European customers, and name
+one to three providers it depends on. When a directed path from the fictional
+government body reaches a non-European company, the presentation highlights the
+complete hidden dependency chain.
 
 All submitted data is simulated, unverified demo data. The application must
 never present it as a factual allegation.
@@ -27,7 +28,7 @@ never present it as a factual allegation.
   seed data, environment template, CI, and agent instructions.
 - [ ] Checkpoint 3: Merge a working backend and deploy a preview environment.
 - [x] Checkpoint 4: Merge the combined website and admin frontend.
-- [ ] Checkpoint 5: Complete automated end-to-end tests.
+- [x] Checkpoint 5: Complete automated end-to-end tests.
 - [ ] Checkpoint 6: Deploy production, rehearse the complete demo, reset the
   production round, and tag the exact commit as `demo-ready`.
 
@@ -35,7 +36,7 @@ never present it as a factual allegation.
 
 - The production presentation view shows a seeded fictional European network
   and a QR code pointing to the production contribution URL.
-- A phone can submit one connected dependency per demo round.
+- A phone can submit one atomic company-profile batch per demo round.
 - A successful submission appears on the presentation without a manual reload.
 - A reachable non-European dependency highlights the shortest path from the
   governmental root and displays a clear reveal message.
@@ -75,20 +76,18 @@ never present it as a factual allegation.
 
 ### Presentation route: `/`
 
-- Use a dark, high-contrast, full-screen canvas.
+- Use a refined deep-ink interface dominated by the interactive graph. Keep
+  chrome minimal, place the question `What does Europe depend on?` inside the
+  graph, and use one coherent cool palette without red or orange.
 - Root the graph at the fictional **European Digital Services Agency**.
 - Show directed arrows with the semantic `source depends on target`.
 - Keep a QR code and short participation instruction visible.
-- Use these jurisdiction colors:
-  - Government body: gold
-  - Europe: blue
-  - United States: red
-  - China: orange
-  - Other non-European: purple
-  - Unknown: gray
-- Show counts for active organizations, audience dependencies, reachable
-  external organizations, and maximum reachable depth.
-- Show a temporary toast for the latest contribution.
+- Use these visual groups: government body in cold white, Europe in blue, all
+  external jurisdictions in violet, and unknown in slate. Exact jurisdiction
+  remains available on node focus.
+- Show only the reachable external count publicly; keep operational metrics in
+  admin.
+- Animate ordinary contributions directly in the graph without a toast.
 - When a newly reachable external organization appears, animate the shortest
   path and show a message such as `Hidden dependency revealed: 3 steps to a US
   provider`.
@@ -98,16 +97,17 @@ never present it as a factual allegation.
 
 ### Contribution route: `/contribute`
 
-- Explain the action in one sentence: `Choose an organization and add one
-  company it depends on.`
-- Let the user search active organizations for the source.
-- Collect target company name, organization type, and jurisdiction.
-- On every page load, use a client-only 50/50 random choice:
-  - Europe-only variant exposes only `Europe`.
-  - External-enabled variant also exposes `United States`, `China`, `Other
-    non-European`, and `Unknown`.
+- Use the company-profile flow from the contribution prototype in three compact
+  numbered sections: `Your company`, `Your customers`, and `Your dependencies`.
+- Collect a new European company name and organization type; its jurisdiction is
+  fixed to Europe for this demo.
+- Let the user search and choose one to three existing European organizations
+  that depend on the contributed company.
+- Collect one to three providers with name, organization type, and jurisdiction;
+  offer quick picks for familiar external providers to accelerate the live demo.
 - Assign each browser an anonymous UUID in local storage.
-- Accept one dependency per browser per round.
+- Submit the entire profile as one atomic batch and accept one batch per browser
+  per round.
 - After success, replace the form with a confirmation that asks the user to
   watch the presentation.
 - Give useful states for invalid input, duplicate dependency, already
@@ -140,6 +140,7 @@ never present it as a factual allegation.
 - Supabase PostgreSQL for durable state
 - Supabase Realtime Broadcast for low-latency committed graph events
 - Cytoscape.js for rendering and laying out the graph
+- Motion for React for restrained form, reveal, and admin transitions
 - Zod for shared request and response validation
 - `qrcode.react` for the QR code
 - Vitest and React Testing Library for unit/component tests
@@ -200,21 +201,32 @@ canonical contract first and coordinating all workstreams.
 - `round integer` for audience rows; seed rows use `null`
 - `source_organization_id uuid not null references organizations(id)`
 - `target_organization_id uuid not null references organizations(id)`
-- `contributor_hash text` for audience rows
+- `contribution_id uuid references contributions(id)` for audience rows
 - `is_seed boolean not null default false`
 - `status text not null check (status in ('active', 'hidden'))`
 - `created_at timestamptz not null default now()`
 - Unique active source/target pair per session and round
-- Unique contributor hash per session and round
 
-Create an atomic PostgreSQL function for audience submission. It validates that
-the session is open, the source is active, the contributor has not submitted in
-the round, the round contains fewer than 150 audience dependencies, and the edge
-is not a self-dependency or duplicate. It normalizes/upserts the target
-organization, inserts the dependency, calls `realtime.send()` with the canonical
-`DependencyCreatedEvent`, and returns the canonical node and edge. The row write
-and Realtime-message insert happen in the same transaction. A rollback therefore
-persists neither the dependency nor its live event.
+### `contributions`
+
+- `id uuid primary key`
+- `session_id uuid not null references sessions(id)`
+- `round integer not null`
+- `contributor_hash text not null`
+- `company_organization_id uuid not null references organizations(id)`
+- `created_at timestamptz not null default now()`
+- Unique `(session_id, round, contributor_hash)`
+
+Create an atomic PostgreSQL function for company-profile submission. It validates
+that the session is open, all one-to-three customers are distinct active European
+nodes, the new European company name is unused, all one-to-three dependencies
+are distinct, the contributor has not submitted in the round, and the resulting
+batch stays below the 150-edge round limit. It inserts the contribution and
+company, normalizes/upserts provider organizations, creates customer-to-company
+and company-to-provider edges, and calls `realtime.send()` once per edge with the
+canonical `DependencyCreatedEvent`. All writes and Realtime-message inserts share
+one transaction. A rollback therefore persists neither the profile nor any of
+its live events.
 
 Admin mutations emit `graph.invalidated` from their database transaction. They
 do not carry full graph state because the presentation refetches after these
@@ -235,17 +247,18 @@ snake_case.
 Returns `GraphSnapshot`. It is the authoritative graph read used at initial
 load, after Realtime invalidations, and during polling fallback.
 
-### `POST /api/sessions/demo/dependencies`
+### `POST /api/sessions/demo/company-contributions`
 
-Accepts `ContributionRequest`. Hash `anonymousClientId` with a server secret
-before storage. The handler awaits the atomic database function; it does not use
-a fire-and-forget persistence promise. On success it returns the same canonical
-node and edge included in the Broadcast event. Return:
+Accepts `CompanyContributionRequest`. Hash `anonymousClientId` with a server
+secret before storage. The handler awaits the atomic database function; it does
+not use a fire-and-forget persistence promise. On success it returns
+`CompanyContributionResult`; every connection has the same canonical event ID,
+node, and edge as its Broadcast event. Return:
 
-- `201` with dependency and target organization IDs
-- `400` invalid input or self-dependency
-- `404` session/source not found
-- `409` duplicate edge or browser already contributed
+- `201` with the canonical company and all created connections
+- `400` invalid profile, repeated names, self-dependency, or non-European customer
+- `404` session/customer not found
+- `409` duplicate relationship, existing company name, or browser already contributed
 - `423` session paused
 - `429` current round at capacity
 
@@ -286,18 +299,18 @@ Use one Realtime topic per session and round:
 `sovereignty:demo:round:<round>`. The presentation subscribes to Broadcast over
 WebSocket before showing a healthy/live indicator.
 
-The dependency flow is:
+The contribution flow is:
 
-1. A phone posts `ContributionRequest` to the Next.js endpoint.
+1. A phone posts `CompanyContributionRequest` to the Next.js endpoint.
 2. The endpoint validates the request and calls the atomic database function.
-3. PostgreSQL inserts/reuses the target organization, inserts the dependency,
-   and inserts its `dependency.created` Broadcast message in one transaction.
-4. Once committed, Supabase delivers that event to the presentation channel.
-5. The presentation validates `GraphEvent`, inserts the canonical node/edge into
-   local graph state immediately, calculates exposure, and runs the reveal.
+3. PostgreSQL creates the profile and all edges and inserts one
+   `dependency.created` Broadcast message per edge in the same transaction.
+4. Once committed, Supabase streams those events to the presentation channel.
+5. The presentation validates each `GraphEvent`, inserts its canonical node/edge
+   into local graph state immediately, calculates exposure, and runs the reveal.
 6. The presentation schedules a debounced `GET` snapshot reconciliation. The
    database snapshot always wins if local and persistent state differ.
-7. The phone receives the canonical API response and shows success.
+7. The phone receives the canonical batch response and shows success.
 
 Broadcast and the HTTP response may arrive in either order; they share the same
 dependency/event identifiers and must be idempotent. The presentation keeps a
@@ -341,8 +354,8 @@ subscription and reconciliation.
   use `GraphSnapshot`.
 - The service-role key, admin password, hash secret, and auth secret remain in
   server environment variables only.
-- The 50/50 form option is a demonstration mechanic, not a security boundary;
-  the backend accepts every valid jurisdiction.
+- The contributed company is always European; dependency providers accept every
+  canonical jurisdiction.
 - Keep the simulated-data disclaimer visible in every public graph view.
 
 ## Team workflow
@@ -374,21 +387,24 @@ Merge order:
 - Europe and unknown do not trigger external exposure.
 - Every external jurisdiction triggers exposure when reachable.
 - Input normalization catches equivalent company names and duplicate edges.
-- Contribution validation covers all documented status codes.
-- A successful transaction stores the dependency and emits exactly one matching
-  `DependencyCreatedEvent`; a rollback does neither.
+- Company-profile validation covers batch limits, distinct names and customers,
+  the Europe-only company rule, and all documented status codes.
+- A successful transaction stores the full batch and emits exactly one matching
+  `DependencyCreatedEvent` per edge; a rollback stores and emits nothing.
 - Repeated event IDs and edge IDs are applied idempotently.
 - Invalid, wrong-round, and unsupported-version events trigger reconciliation
   without changing durable graph state.
 - Admin-cookie validation rejects missing, expired, malformed, and invalid
   signatures.
-- Form variants expose the correct jurisdiction options.
+- The form creates one European company with one-to-three European customers and
+  one-to-three dependency providers.
 - Presentation and contribution states render accessible status messages.
 
 ### End-to-end tests
 
 - Load the seeded graph and verify QR/instructions.
-- Submit a European dependency and observe it without an exposure warning.
+- Submit a profile with only European dependencies and observe it without an
+  exposure warning.
 - Add a multi-hop US dependency and observe the complete reveal path.
 - Reuse an existing target company from two source organizations without
   creating a duplicate organization.

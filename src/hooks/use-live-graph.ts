@@ -95,7 +95,7 @@ export function useLiveGraph() {
         if (newlyExternal) {
           setRevealPath(nextAnalysis.shortestPathTo(newlyExternal));
           if (revealTimer.current) clearTimeout(revealTimer.current);
-          revealTimer.current = setTimeout(() => setRevealPath([]), 6500);
+          revealTimer.current = setTimeout(() => setRevealPath([]), 6000);
         }
         scheduleReconcile();
       },

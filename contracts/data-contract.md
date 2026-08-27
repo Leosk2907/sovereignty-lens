@@ -112,40 +112,67 @@ Every edge in a snapshot must reference nodes present in the same snapshot.
 Arrays are ordered deterministically: nodes by creation time then ID, edges by
 creation time then ID. Clients must still identify records by ID, not position.
 
-## Contribution API
+## Company-profile contribution API
+
+The public form posts to `POST /api/sessions/demo/company-contributions`. One
+submission adds a European company profile, connects one to three existing
+European customers to it, and connects it to one to three dependencies. The
+entire batch commits or rolls back together.
 
 ### Request
 
 ```ts
-export interface ContributionRequest {
+export interface CompanyDependency {
+  name: string;
+  organizationType: Exclude<OrganizationType, "government">;
+  jurisdiction: Jurisdiction;
+}
+
+export interface CompanyContributionRequest {
   contractVersion: 1;
   anonymousClientId: string;
-  sourceOrganizationId: string;
-  target: {
+  company: {
     name: string;
     organizationType: Exclude<OrganizationType, "government">;
-    jurisdiction: Jurisdiction;
+    jurisdiction: "europe";
   };
+  customerOrganizationIds: string[]; // 1-3 existing European nodes
+  dependencies: CompanyDependency[]; // 1-3 providers
 }
 ```
 
 `anonymousClientId` is a UUID generated and persisted by the browser. The API
 hashes it before database storage. It is never returned or broadcast.
 
+For every customer ID, the API creates `customer -> contributed company`; for
+every dependency, it creates `contributed company -> dependency`. These both use
+the invariant `source depends on target`. Customer IDs must be distinct,
+reachable in the current public graph, and European. The contributed company
+must be new in the session. All company, customer, and dependency names in the
+batch must be distinct after normalization.
+
 ### Success response
 
 ```ts
-export interface ContributionResult {
-  contractVersion: 1;
+export interface CompanyContributionConnection {
   eventId: string;
-  round: number;
   node: GraphNode;
   edge: GraphEdge;
 }
+
+export interface CompanyContributionResult {
+  contractVersion: 1;
+  round: number;
+  company: GraphNode;
+  customerConnections: CompanyContributionConnection[]; // 1-3
+  dependencyConnections: CompanyContributionConnection[]; // 1-3
+}
 ```
 
-The response node and edge are canonical persisted objects. `eventId`, `node.id`,
-and `edge.id` exactly match the corresponding Realtime event.
+Each connection is the exact `eventId`, node, and edge sent in one corresponding
+`dependency.created` Realtime event. A customer connection carries the
+contributed company as `node`; a dependency connection carries the dependency
+provider as `node`. All objects are canonical persisted records.
 
 ### Errors
 
@@ -220,10 +247,12 @@ export interface GraphInvalidatedEvent {
 export type GraphEvent = DependencyCreatedEvent | GraphInvalidatedEvent;
 ```
 
-`dependency.created` is emitted in the same database transaction that creates
-the dependency. It contains the same canonical node and edge as the HTTP success
-response. Consumers apply it idempotently using `eventId`, `node.id`, and
-`edge.id`, then reconcile with `GraphSnapshot`.
+One `dependency.created` event is emitted for every edge in a committed company
+profile batch. The messages are inserted in the same database transaction as
+the company, providers, and edges. Each contains the same `eventId`, canonical
+node, and canonical edge as its `CompanyContributionConnection` in the HTTP
+success response. Consumers apply events idempotently using `eventId`, `node.id`,
+and `edge.id`, then reconcile with `GraphSnapshot`.
 
 `graph.invalidated` carries no graph records. Consumers refetch the authoritative
 snapshot immediately. On reset it uses the new current round; the client leaves
@@ -327,13 +356,17 @@ round markers, and audit metadata are never exposed in public entities.
 - Seed dependencies have no audience contributor and remain visible in every
   round unless the seed migration changes.
 - Audience dependencies belong to exactly one positive round.
-- A browser contributes at most once per session round.
+- A browser contributes at most one company-profile batch per session round.
 - Source and target belong to the dependency's session and cannot be equal.
 - Target organization type cannot be `government` through the audience API.
+- A contributed company has jurisdiction `europe` and one to three existing,
+  distinct European customers.
+- A company-profile batch has one to three distinct dependencies and creates
+  between two and six directed edges atomically.
 - A normalized organization name is unique inside a session.
 - One source/target edge is active at most once in a round.
-- `DependencyCreatedEvent` is emitted exactly once for a committed contribution
-  and never for a rolled-back contribution.
+- One `DependencyCreatedEvent` is emitted exactly once for each edge in a
+  committed batch and none are emitted for a rolled-back batch.
 - HTTP, Realtime, and snapshot representations use identical canonical IDs and
   enum values.
 

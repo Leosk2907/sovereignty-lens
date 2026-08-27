@@ -9,8 +9,9 @@ import {
   type AdminLoginResult,
   type AdminLogoutResult,
   type AdminSessionResult,
-  type ContributionRequest,
-  type ContributionResult,
+  type CompanyContributionRequest,
+  type CompanyContributionConnection,
+  type CompanyContributionResult,
   type DependencyCreatedEvent,
   type DependencyStatus,
   type DependencyStatusResult,
@@ -127,59 +128,135 @@ export async function mockGetGraph(): Promise<GraphSnapshot> {
   return publicSnapshot(loadState());
 }
 
-export async function mockSubmitDependency(request: ContributionRequest): Promise<ContributionResult> {
+function normalizeName(name: string): string {
+  return name.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export async function mockSubmitCompanyContribution(
+  request: CompanyContributionRequest,
+): Promise<CompanyContributionResult> {
   const state = loadState();
   if (state.session.status === "paused") throw new Error("SESSION_PAUSED");
-  const publicGraph = publicSnapshot(state);
-  if (!publicGraph.nodes.some((node) => node.id === request.sourceOrganizationId)) {
-    throw new Error("SOURCE_NOT_FOUND");
-  }
-  if (state.dependencies.some(({ round, contributorId }) => round === state.session.currentRound && contributorId === request.anonymousClientId)) {
+  if (state.dependencies.some(
+    ({ round, contributorId }) => round === state.session.currentRound && contributorId === request.anonymousClientId,
+  )) {
     throw new Error("ALREADY_CONTRIBUTED");
   }
-  if (state.dependencies.filter(({ round }) => round === state.session.currentRound).length >= 150) {
-    throw new Error("ROUND_CAPACITY_REACHED");
+
+  const publicGraph = publicSnapshot(state);
+  const publicNodeById = new Map(publicGraph.nodes.map((node) => [node.id, node]));
+  const newEdgeCount = request.customerOrganizationIds.length + request.dependencies.length;
+  const currentRoundCount = state.dependencies.filter(({ round }) => round === state.session.currentRound).length;
+  if (currentRoundCount + newEdgeCount > 150) throw new Error("ROUND_CAPACITY_REACHED");
+
+  const companyNormalized = normalizeName(request.company.name);
+  if (state.nodes.some((node) => normalizeName(node.name) === companyNormalized)) {
+    throw new Error("VALIDATION_ERROR");
   }
 
-  const normalized = request.target.name.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
-  let node = state.nodes.find((candidate) => candidate.name.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase() === normalized);
-  if (!node) {
-    node = {
-      id: crypto.randomUUID(),
-      name: request.target.name.trim().replace(/\s+/g, " "),
-      organizationType: request.target.organizationType,
-      jurisdiction: request.target.jurisdiction,
-      isSeed: false,
-    };
-    state.nodes.push(node);
-  }
-  if (node.id === request.sourceOrganizationId) throw new Error("VALIDATION_ERROR");
-  if (state.dependencies.some(({ edge, round }) => round === state.session.currentRound && edge.sourceOrganizationId === request.sourceOrganizationId && edge.targetOrganizationId === node?.id && edge.status === "active")) {
-    throw new Error("DUPLICATE_DEPENDENCY");
+  const customerIds = new Set(request.customerOrganizationIds);
+  if (customerIds.size !== request.customerOrganizationIds.length) throw new Error("VALIDATION_ERROR");
+  const customers = request.customerOrganizationIds.map((id) => {
+    const node = publicNodeById.get(id);
+    if (!node) throw new Error("SOURCE_NOT_FOUND");
+    if (node.jurisdiction !== "europe") throw new Error("VALIDATION_ERROR");
+    return node;
+  });
+  const customerNames = new Set(customers.map((node) => normalizeName(node.name)));
+  const dependencyNames = new Set<string>();
+  for (const dependency of request.dependencies) {
+    const normalized = normalizeName(dependency.name);
+    if (normalized === companyNormalized || customerNames.has(normalized) || dependencyNames.has(normalized)) {
+      throw new Error("VALIDATION_ERROR");
+    }
+    dependencyNames.add(normalized);
   }
 
-  const edge: GraphEdge = {
+  const now = new Date().toISOString();
+  const company: GraphNode = {
     id: crypto.randomUUID(),
-    sourceOrganizationId: request.sourceOrganizationId,
-    targetOrganizationId: node.id,
+    name: request.company.name.trim().replace(/\s+/g, " "),
+    organizationType: request.company.organizationType,
+    jurisdiction: "europe",
     isSeed: false,
-    status: "active",
-    createdAt: new Date().toISOString(),
   };
-  state.dependencies.push({ edge, round: state.session.currentRound, contributorId: request.anonymousClientId });
+  state.nodes.push(company);
+
+  const events: DependencyCreatedEvent[] = [];
+  const customerConnections: CompanyContributionConnection[] = [];
+  for (const customer of customers) {
+    const edge: GraphEdge = {
+      id: crypto.randomUUID(),
+      sourceOrganizationId: customer.id,
+      targetOrganizationId: company.id,
+      isSeed: false,
+      status: "active",
+      createdAt: now,
+    };
+    state.dependencies.push({ edge, round: state.session.currentRound, contributorId: request.anonymousClientId });
+    const event: DependencyCreatedEvent = {
+      contractVersion: CONTRACT_VERSION,
+      event: "dependency.created",
+      eventId: crypto.randomUUID(),
+      sessionSlug: state.session.slug,
+      round: state.session.currentRound,
+      node: company,
+      edge,
+      occurredAt: now,
+    };
+    events.push(event);
+    customerConnections.push({ eventId: event.eventId, node: company, edge });
+  }
+
+  const dependencyConnections: CompanyContributionConnection[] = [];
+  for (const dependency of request.dependencies) {
+    const normalized = normalizeName(dependency.name);
+    let node = state.nodes.find((candidate) => normalizeName(candidate.name) === normalized);
+    if (!node) {
+      node = {
+        id: crypto.randomUUID(),
+        name: dependency.name.trim().replace(/\s+/g, " "),
+        organizationType: dependency.organizationType,
+        jurisdiction: dependency.jurisdiction,
+        isSeed: false,
+      };
+      state.nodes.push(node);
+    }
+    const edge: GraphEdge = {
+      id: crypto.randomUUID(),
+      sourceOrganizationId: company.id,
+      targetOrganizationId: node.id,
+      isSeed: false,
+      status: "active",
+      createdAt: now,
+    };
+    state.dependencies.push({ edge, round: state.session.currentRound, contributorId: request.anonymousClientId });
+    const event: DependencyCreatedEvent = {
+      contractVersion: CONTRACT_VERSION,
+      event: "dependency.created",
+      eventId: crypto.randomUUID(),
+      sessionSlug: state.session.slug,
+      round: state.session.currentRound,
+      node,
+      edge,
+      occurredAt: now,
+    };
+    events.push(event);
+    dependencyConnections.push({ eventId: event.eventId, node, edge });
+  }
+
   saveState(state);
-  const event: DependencyCreatedEvent = {
+  events.forEach((event, index) => {
+    setTimeout(() => emit(event), index * 250);
+  });
+
+  return {
     contractVersion: CONTRACT_VERSION,
-    event: "dependency.created",
-    eventId: crypto.randomUUID(),
-    sessionSlug: state.session.slug,
     round: state.session.currentRound,
-    node,
-    edge,
-    occurredAt: edge.createdAt,
+    company,
+    customerConnections,
+    dependencyConnections,
   };
-  emit(event);
-  return { contractVersion: CONTRACT_VERSION, eventId: event.eventId, round: state.session.currentRound, node, edge };
 }
 
 export function mockSubscribe(listener: EventListener): () => void {

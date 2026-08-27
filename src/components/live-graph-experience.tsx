@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { QRCodeSVG } from "qrcode.react";
 import { AdminControls } from "@/components/admin-controls";
 import { Brand } from "@/components/brand";
@@ -28,7 +28,7 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
   }, [live.snapshot]);
 
   if (live.loading && !live.snapshot) {
-    return <main className="center-state"><div className="spinner" /><p>Building the dependency map…</p></main>;
+    return <main className="center-state"><div className="spinner" /><p>Loading the dependency network…</p></main>;
   }
 
   if (!live.snapshot || !analysis) {
@@ -42,67 +42,62 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
     );
   }
 
-  const latestEdge = live.snapshot.edges.find((edge) => edge.id === live.latestEdgeId);
-  const latestTarget = live.snapshot.nodes.find((node) => node.id === latestEdge?.targetOrganizationId);
   const revealedTarget = live.snapshot.nodes.find((node) => node.id === live.revealPath.at(-1));
   const graphArea = (
     <section className="graph-stage">
       <header className="presentation-header">
-        <Brand />
-        <div className="presentation-actions">
-          <span className={`connection-pill ${live.connection}`}><i />{live.connection}</span>
-          {mode === "public" ? (
-            <>
-              <Link href="/about">About</Link>
-              <Link className="admin-entry" href="/admin">Admin</Link>
-            </>
-          ) : (
-            <Link href="/" target="_blank">Open public view ↗</Link>
-          )}
-        </div>
+        <Brand active={Boolean(live.latestEdgeId)} />
+        <span className={`connection-pill ${live.connection}`}><i />{live.connection}</span>
       </header>
 
-      <div className="graph-heading">
-        <div>
-          <span className="eyebrow">Live sovereignty map · Round {live.snapshot.session.currentRound}</span>
-          <h1>How far does dependency travel?</h1>
-          <p>Every arrow reads: <strong>this organization depends on the next.</strong></p>
-        </div>
-        <div className="metric-row" aria-label="Graph metrics">
-          <Metric value={live.snapshot.nodes.length} label="organizations" />
-          <Metric value={live.snapshot.edges.filter((edge) => !edge.isSeed).length} label="audience links" />
-          <Metric value={analysis.reachableExternalIds.size} label="external" danger={analysis.reachableExternalIds.size > 0} />
-          <Metric value={analysis.maximumDepth} label="max depth" />
-        </div>
-      </div>
-
       <div className="graph-frame">
-        <GraphCanvas snapshot={live.snapshot} revealPath={live.revealPath} latestEdgeId={live.latestEdgeId} compact={mode === "admin"} />
-        <div className="legend" aria-label="Jurisdiction legend">
-          <Legend color="blue" label="Europe" />
-          <Legend color="red" label="United States" />
-          <Legend color="orange" label="China" />
-          <Legend color="purple" label="Other external" />
-          <Legend color="gray" label="Unknown" />
+        <GraphCanvas
+          snapshot={live.snapshot}
+          revealPath={live.revealPath}
+          latestEdgeId={live.latestEdgeId}
+          compact={mode === "admin"}
+        />
+
+        <div className="graph-question">
+          <h1>What does Europe depend on?</h1>
         </div>
+
+        <div className="exposure-count" aria-label={`${analysis.reachableExternalIds.size} external dependencies revealed`}>
+          <strong>{analysis.reachableExternalIds.size}</strong>
+          <span>external dependencies<br />revealed</span>
+        </div>
+
+        <div className="micro-key" aria-label="Jurisdiction legend">
+          <Legend color="europe" label="Europe" />
+          <Legend color="external" label="External" />
+          <Legend color="unknown" label="Unknown" />
+        </div>
+
         {mode === "public" && (
-          <div className="qr-card">
-            <QRCodeSVG value={contributionUrl} size={92} bgColor="#ffffff" fgColor="#07111f" level="M" />
-            <div><strong>Add one dependency</strong><span>Scan to grow the live map</span></div>
+          <div className="qr-dock">
+            <QRCodeSVG value={contributionUrl} size={86} bgColor="#edf5f7" fgColor="#07141d" level="M" />
+            <div><span>Join the live map</span><strong>Add your company</strong></div>
           </div>
         )}
-      </div>
 
-      {revealedTarget && live.revealPath.length > 1 && (
-        <div className="reveal-banner" role="status">
-          <span>Hidden dependency revealed</span>
-          <strong>{live.revealPath.length - 1} steps to {revealedTarget.name}</strong>
-        </div>
-      )}
-      {latestTarget && !revealedTarget && (
-        <div className="latest-toast" role="status">New dependency: <strong>{latestTarget.name}</strong></div>
-      )}
-      <footer className="demo-disclaimer">Simulated, audience-submitted demo data — not a factual claim.</footer>
+        <AnimatePresence>
+          {revealedTarget && live.revealPath.length > 1 && (
+            <motion.div
+              className="reveal-strip"
+              role="status"
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <span>External dependency revealed</span>
+              <strong>{live.revealPath.length - 1} steps to {revealedTarget.name}</strong>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="demo-disclaimer">Simulated, audience-submitted demo data — not a factual claim.</div>
+      </div>
     </section>
   );
 
@@ -123,10 +118,6 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
   return <main className="presentation-shell">{graphArea}</main>;
 }
 
-function Metric({ value, label, danger = false }: { value: number; label: string; danger?: boolean }) {
-  return <div className={`metric ${danger ? "danger" : ""}`}><strong>{value}</strong><span>{label}</span></div>;
-}
-
-function Legend({ color, label }: { color: string; label: string }) {
+function Legend({ color, label }: { color: "europe" | "external" | "unknown"; label: string }) {
   return <span><i className={color} />{label}</span>;
 }

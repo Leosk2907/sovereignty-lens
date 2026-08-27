@@ -9,8 +9,8 @@ import {
   adminLogoutResultSchema,
   adminSessionResultSchema,
   apiErrorResponseSchema,
-  contributionRequestSchema,
-  contributionResultSchema,
+  companyContributionRequestSchema,
+  companyContributionResultSchema,
   dependencyStatusResultSchema,
   graphSnapshotSchema,
   type AdminAction,
@@ -20,8 +20,8 @@ import {
   type AdminLogoutResult,
   type AdminSessionResult,
   type ApiErrorCode,
-  type ContributionRequest,
-  type ContributionResult,
+  type CompanyContributionRequest,
+  type CompanyContributionResult,
   type DependencyStatus,
   type DependencyStatusResult,
   type GraphSnapshot,
@@ -34,7 +34,7 @@ import {
   mockLogin,
   mockLogout,
   mockSetDependencyStatus,
-  mockSubmitDependency,
+  mockSubmitCompanyContribution,
 } from "@/lib/mock-store";
 
 export const isMockMode =
@@ -92,10 +92,15 @@ export async function getGraphSnapshot(): Promise<GraphSnapshot> {
   return request("/api/sessions/demo/graph", graphSnapshotSchema);
 }
 
-export async function submitDependency(input: ContributionRequest): Promise<ContributionResult> {
-  const body = contributionRequestSchema.parse(input);
-  if (isMockMode) return mockSubmitDependency(body).catch(mockError);
-  return request("/api/sessions/demo/dependencies", contributionResultSchema, { method: "POST", body: JSON.stringify(body) });
+export async function submitCompanyContribution(
+  input: CompanyContributionRequest,
+): Promise<CompanyContributionResult> {
+  const body = companyContributionRequestSchema.parse(input);
+  if (isMockMode) return mockSubmitCompanyContribution(body).catch(mockError);
+  return request("/api/sessions/demo/company-contributions", companyContributionResultSchema, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function loginAdmin(password: string): Promise<AdminLoginResult> {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CONTRACT_VERSION,
   adminSessionResultSchema,
-  contributionRequestSchema,
+  companyContributionRequestSchema,
   graphEventSchema,
   graphSnapshotSchema,
 } from "@/lib/contracts";
@@ -15,15 +15,20 @@ describe("data contract", () => {
 
   it("rejects unknown request fields", () => {
     expect(() =>
-      contributionRequestSchema.parse({
+      companyContributionRequestSchema.parse({
         contractVersion: CONTRACT_VERSION,
         anonymousClientId: "00000000-0000-4000-8000-000000000401",
-        sourceOrganizationId: demoGraphFixture.session.rootOrganizationId,
-        target: {
-          name: "Example Supplier",
+        company: {
+          name: "Example Company",
           organizationType: "software",
           jurisdiction: "europe",
         },
+        customerOrganizationIds: [demoGraphFixture.session.rootOrganizationId],
+        dependencies: [{
+          name: "Example Supplier",
+          organizationType: "cloud",
+          jurisdiction: "united_states",
+        }],
         unexpected: true,
       }),
     ).toThrow();
@@ -45,6 +50,57 @@ describe("data contract", () => {
         occurredAt: edge.createdAt,
       }),
     ).toMatchObject({ eventId, node, edge });
+  });
+
+  it("parses one European company with one-to-three customers and dependencies", () => {
+    expect(
+      companyContributionRequestSchema.parse({
+        contractVersion: CONTRACT_VERSION,
+        anonymousClientId: "00000000-0000-4000-8000-000000000401",
+        company: {
+          name: "Northstar Civic Systems",
+          organizationType: "software",
+          jurisdiction: "europe",
+        },
+        customerOrganizationIds: [demoGraphFixture.session.rootOrganizationId],
+        dependencies: [
+          {
+            name: "Pacific Quantum Cloud",
+            organizationType: "cloud",
+            jurisdiction: "united_states",
+          },
+        ],
+      }).company.jurisdiction,
+    ).toBe("europe");
+  });
+
+  it("rejects a non-European contributed company and oversized batches", () => {
+    const base = {
+      contractVersion: CONTRACT_VERSION,
+      anonymousClientId: "00000000-0000-4000-8000-000000000401",
+      company: {
+        name: "Northstar Civic Systems",
+        organizationType: "software" as const,
+        jurisdiction: "united_states",
+      },
+      customerOrganizationIds: [demoGraphFixture.session.rootOrganizationId],
+      dependencies: [
+        { name: "Provider One", organizationType: "cloud" as const, jurisdiction: "europe" as const },
+      ],
+    };
+    expect(companyContributionRequestSchema.safeParse(base).success).toBe(false);
+    expect(
+      companyContributionRequestSchema.safeParse({
+        ...base,
+        company: { ...base.company, jurisdiction: "europe" },
+        dependencies: [
+          ...base.dependencies,
+          { name: "Provider Two", organizationType: "cloud", jurisdiction: "europe" },
+          { name: "Provider Three", organizationType: "cloud", jurisdiction: "europe" },
+          { name: "Provider Four", organizationType: "cloud", jurisdiction: "europe" },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("parses the presenter session contract", () => {
