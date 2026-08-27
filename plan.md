@@ -2,7 +2,7 @@
 
 Status: approved for implementation
 
-This file is the canonical delivery plan. The four workstream plans under
+This file is the canonical delivery plan. The active workstream plans under
 `workstreams/` refine ownership and sequencing but may not change the shared
 contracts in this document without an explicit integration decision.
 
@@ -26,8 +26,8 @@ never present it as a factual allegation.
 - [ ] Checkpoint 2: Scaffold Next.js, shared contracts, database migrations,
   seed data, environment template, CI, and agent instructions.
 - [ ] Checkpoint 3: Merge a working backend and deploy a preview environment.
-- [ ] Checkpoint 4: Merge the audience form and presentation graph.
-- [ ] Checkpoint 5: Merge presenter controls and automated end-to-end tests.
+- [x] Checkpoint 4: Merge the combined website and admin frontend.
+- [ ] Checkpoint 5: Complete automated end-to-end tests.
 - [ ] Checkpoint 6: Deploy production, rehearse the complete demo, reset the
   production round, and tag the exact commit as `demo-ready`.
 
@@ -73,7 +73,7 @@ never present it as a factual allegation.
 
 ## User experience
 
-### Presentation route: `/present`
+### Presentation route: `/`
 
 - Use a dark, high-contrast, full-screen canvas.
 - Root the graph at the fictional **European Digital Services Agency**.
@@ -255,6 +255,15 @@ Accepts `{ password: string }`, validates against `ADMIN_PASSWORD`, and creates
 the signed admin cookie using `AUTH_SECRET`. Return a generic unauthorized error
 without revealing which check failed.
 
+### `GET /api/admin/session`
+
+Returns the authenticated presenter state and current `SessionSummary`, or the
+canonical `401` error.
+
+### `POST /api/admin/logout`
+
+Clears the signed presenter cookie and returns `AdminLogoutResult`.
+
 ### `POST /api/admin/sessions/demo/actions`
 
 Accepts `AdminAction`. Requires the admin cookie. Pause/resume update session
@@ -342,9 +351,7 @@ The initial scaffold and shared contracts land on `main` first. Then each owner
 works on a short-lived branch described in its workstream plan:
 
 - `feature/backend-foundation`
-- `feature/audience-flow`
-- `feature/presentation-graph`
-- `feature/admin-quality`
+- `feature/website-admin`
 
 The integration owner controls shared domain types, global configuration,
 database contracts, and merges. Workstream owners must not silently change API
@@ -355,9 +362,8 @@ Merge order:
 
 1. Scaffold, fixtures, migrations, and contracts
 2. Backend/database
-3. Audience flow and presentation graph in either order
-4. Admin and quality work
-5. Integration fixes, production deployment, and rehearsal
+3. Combined website and admin frontend
+4. Integration fixes, production deployment, and rehearsal
 
 ## Test plan
 

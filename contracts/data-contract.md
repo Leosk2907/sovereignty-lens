@@ -245,6 +245,17 @@ export interface AdminLoginResult {
   authenticated: true;
 }
 
+export interface AdminSessionResult {
+  contractVersion: 1;
+  authenticated: true;
+  session: SessionSummary;
+}
+
+export interface AdminLogoutResult {
+  contractVersion: 1;
+  authenticated: false;
+}
+
 export type AdminAction =
   | { type: "pause" }
   | { type: "resume" }
@@ -290,6 +301,10 @@ The admin dependency list contains all current-round, non-seed dependencies,
 including hidden entries, ordered newest first. Public graph snapshots never
 include hidden edges or nodes made unreachable solely by hidden edges.
 
+`GET /api/admin/session` returns `AdminSessionResult` or the canonical `401`
+error. `POST /api/admin/logout` clears the signed cookie and returns
+`AdminLogoutResult`.
+
 ## Database-to-JSON mapping
 
 | Database | JSON |
@@ -331,4 +346,3 @@ round markers, and audit metadata are never exposed in public entities.
 - Add contract tests that parse fixtures, endpoint responses, SQL-function
   results, and Broadcast messages with the same schemas.
 - CI fails if generated database types or contract fixtures are stale.
-
