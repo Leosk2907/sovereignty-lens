@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: sovereignty-lens-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      # One connection is permanently checked out by the LISTEN/NOTIFY bridge.
+      maximum-pool-size: 12
+      pool-name: sovereignty-lens-pool
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    deserialization:
+      # Strict request parsing: an unknown field is a contract violation, not noise.
+      fail-on-unknown-properties: true
+      fail-on-null-for-primitives: true
+    serialization:
+      write-dates-as-timestamps: false
+      # Timestamps are RFC 3339 strings, never epoch numbers.
+      write-date-timestamps-as-nanoseconds: false
+    default-property-inclusion: always
+  mvc:
+    async:
+      # Server-Sent Events streams manage their own lifetime.
+      request-timeout: -1
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  # Bound to every interface so a phone on the same network can reach the API
+  # through the QR code.
+  address: 0.0.0.0
+  shutdown: graceful
+  error:
+    whitelabel:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+app:
+  # No secret has a fallback: a deployment that forgets one fails to start.
+  admin-password: ${APP_ADMIN_PASSWORD}
+  auth-secret: ${APP_AUTH_SECRET}
+  contributor-hash-secret: ${APP_CONTRIBUTOR_HASH_SECRET}
+  public-base-url: ${APP_PUBLIC_BASE_URL}
+  cors-allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
+  round-capacity: ${APP_ROUND_CAPACITY:150}
+  admin-session-ttl: PT8H
+  sse-heartbeat-interval: PT15S
+  sse-connection-timeout: PT2H
+
+springdoc:
+  api-docs:
+    path: /api/openapi
+  swagger-ui:
+    path: /api/docs
+
+logging:
+  level:
+    eu.sovereigntylens: INFO
