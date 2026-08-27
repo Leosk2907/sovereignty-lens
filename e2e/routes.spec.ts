@@ -26,13 +26,13 @@ test("a committed external dependency reveals on the live graph", async ({ conte
   await expect(source).toBeEnabled();
   await source.click();
   await expect(source).toHaveAttribute("aria-selected", "true");
-  await contribution.getByLabel("Company name").fill("Atlantic Compute Inc");
+  await contribution.getByLabel("Company name").fill("Pacific Quantum Cloud");
   await contribution.getByLabel("Jurisdiction").selectOption("united_states");
   await contribution.getByRole("button", { name: "Add to the live graph →" }).click();
   await expect(contribution.getByRole("heading", { name: "Now watch the main screen." })).toBeVisible();
 
   await expect(presentation.getByText("Hidden dependency revealed")).toBeVisible();
-  await expect(presentation.getByText(/steps to Atlantic Compute Inc/)).toBeVisible();
+  await expect(presentation.getByText(/steps to Pacific Quantum Cloud/)).toBeVisible();
 });
 
 test("presenter can pause and resume submissions", async ({ page }) => {

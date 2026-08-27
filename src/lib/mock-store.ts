@@ -21,9 +21,9 @@ import {
   type GraphSnapshot,
   type SessionSummary,
 } from "@/lib/contracts";
-import { demoGraphFixture } from "@/lib/fixtures";
+import { populatedDemoGraphFixture } from "@/lib/fixtures";
 
-const STATE_KEY = "sovereignty-lens.mock-state.v1";
+const STATE_KEY = "sovereignty-lens.mock-state.v2";
 const AUTH_KEY = "sovereignty-lens.mock-admin.v1";
 const CHANNEL_NAME = "sovereignty-lens.mock-events.v1";
 
@@ -44,12 +44,12 @@ const listeners = new Set<EventListener>();
 
 function freshState(): MockState {
   return {
-    session: structuredClone(demoGraphFixture.session),
-    nodes: structuredClone(demoGraphFixture.nodes),
-    dependencies: demoGraphFixture.edges.map((edge) => ({
+    session: structuredClone(populatedDemoGraphFixture.session),
+    nodes: structuredClone(populatedDemoGraphFixture.nodes),
+    dependencies: populatedDemoGraphFixture.edges.map((edge, index) => ({
       edge: structuredClone(edge),
-      round: null,
-      contributorId: null,
+      round: edge.isSeed ? null : populatedDemoGraphFixture.session.currentRound,
+      contributorId: edge.isSeed ? null : `dummy-contributor-${index}`,
     })),
   };
 }
