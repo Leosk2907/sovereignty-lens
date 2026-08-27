@@ -16,11 +16,11 @@ the app uses its browser-based demo transport. The mock admin password is
 
 ## Routes
 
-- `/` — live presentation graph
-- `/contribute` — mobile audience contribution flow
-- `/about` — project explanation and prototype disclosure
-- `/admin` — password-protected live graph and presenter controls
-- `/present` — compatibility redirect to `/`
+- `/`: live presentation graph
+- `/contribute`: mobile audience contribution flow
+- `/about`: project explanation and prototype disclosure
+- `/admin`: password-protected live graph and presenter controls
+- `/present`: compatibility redirect to `/`
 
 ## Commands
 

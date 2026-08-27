@@ -76,12 +76,10 @@ export function AdminControls({ snapshot, contributionUrl, onRefresh, onLogout }
   }
 
   return (
-    <motion.aside
+    <aside
       className={`admin-panel ${expanded ? "expanded" : "collapsed"}`}
       aria-label="Presenter controls"
-      initial={false}
-      animate={{ width: expanded ? 360 : 208 }}
-      transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+      style={{ width: expanded ? 360 : 208 }}
     >
       <div className="admin-panel-heading">
         <div>
@@ -190,6 +188,6 @@ export function AdminControls({ snapshot, contributionUrl, onRefresh, onLogout }
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.aside>
+    </aside>
   );
 }

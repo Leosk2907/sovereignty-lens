@@ -12,11 +12,12 @@ import cytoscape, {
 import type { GraphEdge, GraphNode, GraphSnapshot, Jurisdiction } from "@/lib/contracts";
 import { analyzeGraph } from "@/lib/graph-analysis";
 
-type JurisdictionGroup = "europe" | "external" | "unknown";
+type JurisdictionGroup = "government" | "europe" | "external" | "unknown";
 
 const groupColors: Record<JurisdictionGroup, string> = {
+  government: "#d7e7df",
   europe: "#5798ba",
-  external: "#9783ce",
+  external: "#d9a45b",
   unknown: "#6f818b",
 };
 
@@ -34,6 +35,10 @@ export function jurisdictionGroup(jurisdiction: Jurisdiction): JurisdictionGroup
   return "external";
 }
 
+export function graphNodeGroup(node: Pick<GraphNode, "organizationType" | "jurisdiction">): JurisdictionGroup {
+  return node.organizationType === "government" ? "government" : jurisdictionGroup(node.jurisdiction);
+}
+
 interface GraphCanvasProps {
   snapshot: GraphSnapshot;
   revealPath: string[];
@@ -42,7 +47,7 @@ interface GraphCanvasProps {
 }
 
 function nodeData(node: GraphNode, rootId: string) {
-  const group = jurisdictionGroup(node.jurisdiction);
+  const group = graphNodeGroup(node);
   const isRoot = node.id === rootId;
   return {
     id: node.id,
@@ -51,7 +56,7 @@ function nodeData(node: GraphNode, rootId: string) {
     kind: node.organizationType,
     jurisdiction: node.jurisdiction,
     group,
-    color: isRoot ? "#edf5f7" : groupColors[group],
+    color: groupColors[group],
     root: isRoot ? "yes" : "no",
     seed: node.isSeed ? "yes" : "no",
   };
@@ -137,7 +142,7 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
       selector: "node.path-node",
       css: {
         opacity: 1,
-        "border-color": "#d8d0f4",
+        "border-color": "#f0c274",
         "border-opacity": 0.9,
         "border-width": 4,
       },
@@ -147,8 +152,8 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
       css: {
         opacity: 1,
         width: 3,
-        "line-color": "#a694dd",
-        "target-arrow-color": "#c5b9ec",
+        "line-color": "#d9a45b",
+        "target-arrow-color": "#f0c274",
         "line-style": "dashed",
         "line-dash-pattern": [7, 5],
       },
@@ -200,6 +205,21 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
         "line-dash-pattern": [8, 5],
       },
     },
+    {
+      selector: "edge.path-edge.latest-edge",
+      css: {
+        "line-color": "#d9a45b",
+        "target-arrow-color": "#f0c274",
+      },
+    },
+    {
+      selector: "node.path-node.latest-node",
+      css: { "border-color": "#f0c274" },
+    },
+    {
+      selector: ".entering",
+      css: { opacity: 0 },
+    },
   ];
 }
 
@@ -208,6 +228,8 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
   const graphRef = useRef<Core | null>(null);
   const initialSnapshotRef = useRef(snapshot);
   const topologyRef = useRef("");
+  const layoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animatedLatestRef = useRef<string | null>(null);
   const reduceMotion = useReducedMotion();
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -237,7 +259,6 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
         name: "breadthfirst",
         directed: true,
         direction: "rightward",
-        roots: [initial.session.rootOrganizationId],
         padding: compact ? 30 : 54,
         spacingFactor: compact ? 1.02 : 1.2,
         nodeDimensionsIncludeLabels: true,
@@ -279,13 +300,18 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
     });
 
     const resizeObserver = new ResizeObserver(() => {
-      graph.resize();
-      graph.fit(undefined, compact ? 30 : 52);
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = setTimeout(() => {
+        graph.resize();
+        graph.fit(undefined, compact ? 30 : 52);
+      }, 90);
     });
     resizeObserver.observe(containerRef.current);
 
     return () => {
       resizeObserver.disconnect();
+      if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       graph.destroy();
       graphRef.current = null;
     };
@@ -313,31 +339,78 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
       } else {
         const latestEdge = snapshot.edges.find((edge) => edge.id === latestEdgeId && edge.targetOrganizationId === node.id);
         const sourcePosition = latestEdge ? graph.getElementById(latestEdge.sourceOrganizationId).position() : { x: 0, y: 0 };
-        graph.add({ group: "nodes", data: nodeData(node, snapshot.session.rootOrganizationId), position: sourcePosition });
+        const addedNode = graph.add({
+          group: "nodes",
+          classes: topologyRef.current ? "entering" : "",
+          data: nodeData(node, snapshot.session.rootOrganizationId),
+        });
+        addedNode.position(sourcePosition);
       }
     }
     for (const edge of snapshot.edges) {
       const existing = graph.getElementById(edge.id);
       if (existing.length) existing.data(edgeData(edge));
-      else graph.add({ group: "edges", data: edgeData(edge) });
+      else graph.add({ group: "edges", classes: topologyRef.current ? "entering" : "", data: edgeData(edge) });
     }
     graph.endBatch();
 
     if (topology !== topologyRef.current) {
-      graph.layout({
-        name: "breadthfirst",
-        directed: true,
-        direction: "rightward",
-        roots: [snapshot.session.rootOrganizationId],
-        padding: compact ? 30 : 54,
-        spacingFactor: compact ? 1.02 : 1.2,
-        nodeDimensionsIncludeLabels: true,
-        fit: true,
-        animate: topologyRef.current !== "" && !reduceMotion,
-        animationDuration: 460,
-        animationEasing: "ease-out-cubic",
-      }).run();
+      const isInitialLayout = topologyRef.current === "";
       topologyRef.current = topology;
+      if (layoutTimerRef.current) clearTimeout(layoutTimerRef.current);
+
+      const runLayout = () => {
+        const layoutOptions = {
+          name: "breadthfirst",
+          directed: true,
+          direction: "rightward",
+          roots: graph.getElementById(snapshot.session.rootOrganizationId),
+          padding: compact ? 30 : 54,
+          spacingFactor: compact ? 1.02 : 1.2,
+          nodeDimensionsIncludeLabels: true,
+        } as const;
+
+        graph.stop();
+        graph.nodes().stop();
+        if (isInitialLayout || reduceMotion) {
+          graph.layout({ ...layoutOptions, fit: true, animate: false }).run();
+          graph.elements(".entering").removeClass("entering");
+          return;
+        }
+
+        const currentPositions = new Map(
+          graph.nodes().map((node) => [node.id(), { ...node.position() }] as const),
+        );
+        const currentZoom = graph.zoom();
+        const currentPan = { ...graph.pan() };
+
+        graph.layout({ ...layoutOptions, fit: false, animate: false }).run();
+        const targetPositions = new Map(
+          graph.nodes().map((node) => [node.id(), { ...node.position() }] as const),
+        );
+        graph.fit(graph.elements(), compact ? 30 : 54);
+        const targetZoom = graph.zoom();
+        const targetPan = { ...graph.pan() };
+
+        graph.nodes().forEach((node) => {
+          node.position(currentPositions.get(node.id()) ?? node.position());
+        });
+        graph.zoom(currentZoom);
+        graph.pan(currentPan);
+        graph.elements(".entering").removeClass("entering");
+
+        graph.nodes().forEach((node) => {
+          const position = targetPositions.get(node.id());
+          if (position) node.animate({ position }, { duration: 560, easing: "ease-out-cubic" });
+        });
+        graph.animate(
+          { zoom: targetZoom, pan: targetPan },
+          { duration: 560, easing: "ease-out-cubic" },
+        );
+      };
+
+      if (isInitialLayout || reduceMotion) runLayout();
+      else layoutTimerRef.current = setTimeout(runLayout, 140);
     }
   }, [snapshot, latestEdgeId, compact, reduceMotion]);
 

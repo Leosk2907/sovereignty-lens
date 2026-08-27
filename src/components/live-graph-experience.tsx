@@ -47,7 +47,12 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
     <section className="graph-stage">
       <header className="presentation-header">
         <Brand active={Boolean(live.latestEdgeId)} />
-        <span className={`connection-pill ${live.connection}`}><i />{live.connection}</span>
+        <span
+          className={`connection-pill ${live.connection}`}
+          role="status"
+          aria-label={`Connection ${live.connection}`}
+          title={`Connection ${live.connection}`}
+        ><i /></span>
       </header>
 
       <div className="graph-frame">
@@ -68,6 +73,7 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
         </div>
 
         <div className="micro-key" aria-label="Jurisdiction legend">
+          <Legend color="government" label="Government" />
           <Legend color="europe" label="Europe" />
           <Legend color="external" label="External" />
           <Legend color="unknown" label="Unknown" />
@@ -96,7 +102,7 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
           )}
         </AnimatePresence>
 
-        <div className="demo-disclaimer">Simulated, audience-submitted demo data — not a factual claim.</div>
+        <div className="demo-disclaimer">Simulated, audience-submitted demo data. Not a factual claim.</div>
       </div>
     </section>
   );
@@ -118,6 +124,6 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
   return <main className="presentation-shell">{graphArea}</main>;
 }
 
-function Legend({ color, label }: { color: "europe" | "external" | "unknown"; label: string }) {
+function Legend({ color, label }: { color: "government" | "europe" | "external" | "unknown"; label: string }) {
   return <span><i className={color} />{label}</span>;
 }

@@ -6,11 +6,17 @@ import {
   graphEventSchema,
   graphSnapshotSchema,
 } from "@/lib/contracts";
-import { demoGraphFixture } from "@/lib/fixtures";
+import { demoGraphFixture, populatedDemoGraphFixture } from "@/lib/fixtures";
 
 describe("data contract", () => {
   it("parses the canonical graph fixture", () => {
     expect(graphSnapshotSchema.parse(demoGraphFixture)).toEqual(demoGraphFixture);
+  });
+
+  it("parses the populated 28-organization demo network", () => {
+    const parsed = graphSnapshotSchema.parse(populatedDemoGraphFixture);
+    expect(parsed.nodes).toHaveLength(28);
+    expect(parsed.edges).toHaveLength(29);
   });
 
   it("rejects unknown request fields", () => {

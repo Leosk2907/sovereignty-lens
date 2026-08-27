@@ -78,13 +78,13 @@ never present it as a factual allegation.
 
 - Use a refined deep-ink interface dominated by the interactive graph. Keep
   chrome minimal, place the question `What does Europe depend on?` inside the
-  graph, and use one coherent cool palette without red or orange.
+  graph, and reserve warning amber for external dependencies.
 - Root the graph at the fictional **European Digital Services Agency**.
 - Show directed arrows with the semantic `source depends on target`.
 - Keep a QR code and short participation instruction visible.
-- Use these visual groups: government body in cold white, Europe in blue, all
-  external jurisdictions in violet, and unknown in slate. Exact jurisdiction
-  remains available on node focus.
+- Use these visual groups: government bodies in pale mineral white, Europe in
+  blue, all external jurisdictions in warning amber, and unknown in slate.
+  Exact jurisdiction remains available on node focus.
 - Show only the reachable external count publicly; keep operational metrics in
   admin.
 - Animate ordinary contributions directly in the graph without a toast.

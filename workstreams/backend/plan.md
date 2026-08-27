@@ -79,10 +79,10 @@ may not change its semantics without a coordinated contract update.
 
 Use only obviously fictional entities:
 
-- European Digital Services Agency — government root, Europe
-- Alpine Civic Systems — software, Europe
-- Baltic Data Works — cloud, Europe
-- Rhine Public Networks — telecom, Europe
+- European Digital Services Agency: government root, Europe
+- Alpine Civic Systems: software, Europe
+- Baltic Data Works: cloud, Europe
+- Rhine Public Networks: telecom, Europe
 
 Seed only European dependencies. The external reveal must come from audience
 participation.

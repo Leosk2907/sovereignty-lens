@@ -16,6 +16,7 @@ export function useLiveGraph() {
   const snapshotRef = useRef<GraphSnapshot | null>(null);
   const processedEvents = useRef(new Set<string>());
   const reconcileTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revealStartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -93,9 +94,13 @@ export function useLiveGraph() {
           (id) => !previousAnalysis.reachableExternalIds.has(id),
         );
         if (newlyExternal) {
-          setRevealPath(nextAnalysis.shortestPathTo(newlyExternal));
+          const path = nextAnalysis.shortestPathTo(newlyExternal);
+          if (revealStartTimer.current) clearTimeout(revealStartTimer.current);
           if (revealTimer.current) clearTimeout(revealTimer.current);
-          revealTimer.current = setTimeout(() => setRevealPath([]), 6000);
+          revealStartTimer.current = setTimeout(() => {
+            setRevealPath(path);
+            revealTimer.current = setTimeout(() => setRevealPath([]), 5600);
+          }, 780);
         }
         scheduleReconcile();
       },
@@ -115,6 +120,7 @@ export function useLiveGraph() {
   }, [connection, refresh]);
 
   useEffect(() => () => {
+    if (revealStartTimer.current) clearTimeout(revealStartTimer.current);
     if (revealTimer.current) clearTimeout(revealTimer.current);
     if (latestTimer.current) clearTimeout(latestTimer.current);
   }, []);

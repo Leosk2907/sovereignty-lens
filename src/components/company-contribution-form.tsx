@@ -42,7 +42,7 @@ const suggestedDependencies: Array<{
 ];
 
 const errorCopy: Record<string, string> = {
-  VALIDATION_ERROR: "Check your company, customer, and dependency names—none can repeat each other.",
+  VALIDATION_ERROR: "Check your company, customer, and dependency names. None can repeat each other.",
   SOURCE_NOT_FOUND: "One of your customers is no longer active. Reload and choose again.",
   ALREADY_CONTRIBUTED: "This device has already contributed a company profile this round.",
   SESSION_PAUSED: "The presenter has temporarily paused submissions.",
@@ -194,7 +194,7 @@ export function CompanyContributionForm() {
         <span className="step-label">Company profile live</span>
         <h1>Now watch the main screen.</h1>
         <p><strong>{companyName}</strong> just joined the network. Its customers and dependencies are appearing now.</p>
-        <p className="small-disclaimer">Simulated, unverified demo data—not a factual claim.</p>
+        <p className="small-disclaimer">Simulated, unverified demo data. Not a factual claim.</p>
       </main>
     );
   }
@@ -262,10 +262,11 @@ export function CompanyContributionForm() {
                 <motion.div
                   className="dependency-row"
                   key={row.key}
-                  layout
+                  layout="position"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, height: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ layout: { type: "spring", stiffness: 340, damping: 32 }, duration: 0.18 }}
                 >
                   <div className="dependency-row-heading">
                     <span>Dependency {index + 1}</span>
@@ -313,7 +314,7 @@ export function CompanyContributionForm() {
           {submitting ? "Adding company…" : "Add company profile to the graph →"}
         </button>
       </form>
-      <p className="small-disclaimer">This is simulated, unverified demo data—not a factual claim.</p>
+      <p className="small-disclaimer">This is simulated, unverified demo data. Not a factual claim.</p>
     </main>
   );
 }

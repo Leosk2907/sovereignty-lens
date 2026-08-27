@@ -24,7 +24,7 @@ import {
 } from "@/lib/contracts";
 import { populatedDemoGraphFixture } from "@/lib/fixtures";
 
-const STATE_KEY = "sovereignty-lens.mock-state.v2";
+const STATE_KEY = "sovereignty-lens.mock-state.v3";
 const AUTH_KEY = "sovereignty-lens.mock-admin.v1";
 const CHANNEL_NAME = "sovereignty-lens.mock-events.v1";
 
@@ -247,7 +247,7 @@ export async function mockSubmitCompanyContribution(
 
   saveState(state);
   events.forEach((event, index) => {
-    setTimeout(() => emit(event), index * 250);
+    setTimeout(() => emit(event), index * 90);
   });
 
   return {
