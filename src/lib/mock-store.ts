@@ -21,6 +21,10 @@ import {
   type GraphSnapshot,
   type SessionSummary,
 } from "@/lib/contracts";
+import type {
+  CompanyContributionRequest,
+  CompanyContributionResult,
+} from "@/lib/company-contract";
 import { populatedDemoGraphFixture } from "@/lib/fixtures";
 
 const STATE_KEY = "sovereignty-lens.mock-state.v2";
@@ -180,6 +184,145 @@ export async function mockSubmitDependency(request: ContributionRequest): Promis
   };
   emit(event);
   return { contractVersion: CONTRACT_VERSION, eventId: event.eventId, round: state.session.currentRound, node, edge };
+}
+
+function normalizeName(name: string): string {
+  return name.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Prototype-only: introduces the contributor's own company as a new node,
+ * with edges from a set of existing EU customers and to a set of
+ * dependencies (EU or external). One contributor gate covers the whole
+ * batch, not each edge. Events are emitted with a small stagger so a live
+ * presentation view can animate each reveal in turn instead of only the
+ * last one surviving React's synchronous-update batching.
+ */
+export async function mockSubmitCompanyContribution(
+  request: CompanyContributionRequest,
+): Promise<CompanyContributionResult> {
+  const state = loadState();
+  if (state.session.status === "paused") throw new Error("SESSION_PAUSED");
+
+  const publicGraph = publicSnapshot(state);
+  const publicNodeById = new Map(publicGraph.nodes.map((node) => [node.id, node]));
+
+  // One-profile-per-device gate disabled for now to make prototype testing
+  // less annoying. Re-enable before this leaves the prototype stage.
+
+  const newEdgeCount = request.customerOrganizationIds.length + request.dependencies.length;
+  const currentRoundCount = state.dependencies.filter(
+    ({ round }) => round === state.session.currentRound,
+  ).length;
+  if (currentRoundCount + newEdgeCount > 150) throw new Error("ROUND_CAPACITY_REACHED");
+
+  const companyNormalized = normalizeName(request.company.name);
+  if (state.nodes.some((node) => normalizeName(node.name) === companyNormalized)) {
+    throw new Error("VALIDATION_ERROR");
+  }
+
+  const customerIds = new Set(request.customerOrganizationIds);
+  if (customerIds.size !== request.customerOrganizationIds.length) throw new Error("VALIDATION_ERROR");
+  const customers = request.customerOrganizationIds.map((id) => {
+    const node = publicNodeById.get(id);
+    if (!node) throw new Error("SOURCE_NOT_FOUND");
+    if (node.jurisdiction !== "europe") throw new Error("VALIDATION_ERROR");
+    return node;
+  });
+  const customerNamesNormalized = new Set(customers.map((node) => normalizeName(node.name)));
+
+  const dependencyNamesNormalized = new Set<string>();
+  for (const dependency of request.dependencies) {
+    const normalized = normalizeName(dependency.name);
+    if (normalized === companyNormalized || customerNamesNormalized.has(normalized) || dependencyNamesNormalized.has(normalized)) {
+      throw new Error("VALIDATION_ERROR");
+    }
+    dependencyNamesNormalized.add(normalized);
+  }
+
+  const now = new Date().toISOString();
+  const company: GraphNode = {
+    id: crypto.randomUUID(),
+    name: request.company.name.trim().replace(/\s+/g, " "),
+    organizationType: request.company.organizationType,
+    jurisdiction: request.company.jurisdiction,
+    isSeed: false,
+  };
+  state.nodes.push(company);
+
+  const events: DependencyCreatedEvent[] = [];
+  const customerEdges: GraphEdge[] = [];
+  for (const customer of customers) {
+    const edge: GraphEdge = {
+      id: crypto.randomUUID(),
+      sourceOrganizationId: customer.id,
+      targetOrganizationId: company.id,
+      isSeed: false,
+      status: "active",
+      createdAt: now,
+    };
+    state.dependencies.push({ edge, round: state.session.currentRound, contributorId: request.anonymousClientId });
+    customerEdges.push(edge);
+    events.push({
+      contractVersion: CONTRACT_VERSION,
+      event: "dependency.created",
+      eventId: crypto.randomUUID(),
+      sessionSlug: state.session.slug,
+      round: state.session.currentRound,
+      node: company,
+      edge,
+      occurredAt: now,
+    });
+  }
+
+  const dependencyEdges: GraphEdge[] = [];
+  for (const dependency of request.dependencies) {
+    const normalized = normalizeName(dependency.name);
+    let node = state.nodes.find((candidate) => normalizeName(candidate.name) === normalized);
+    if (!node) {
+      node = {
+        id: crypto.randomUUID(),
+        name: dependency.name.trim().replace(/\s+/g, " "),
+        organizationType: dependency.organizationType,
+        jurisdiction: dependency.jurisdiction,
+        isSeed: false,
+      };
+      state.nodes.push(node);
+    }
+    const edge: GraphEdge = {
+      id: crypto.randomUUID(),
+      sourceOrganizationId: company.id,
+      targetOrganizationId: node.id,
+      isSeed: false,
+      status: "active",
+      createdAt: now,
+    };
+    state.dependencies.push({ edge, round: state.session.currentRound, contributorId: request.anonymousClientId });
+    dependencyEdges.push(edge);
+    events.push({
+      contractVersion: CONTRACT_VERSION,
+      event: "dependency.created",
+      eventId: crypto.randomUUID(),
+      sessionSlug: state.session.slug,
+      round: state.session.currentRound,
+      node,
+      edge,
+      occurredAt: now,
+    });
+  }
+
+  saveState(state);
+  events.forEach((event, index) => {
+    setTimeout(() => emit(event), index * 250);
+  });
+
+  return {
+    contractVersion: CONTRACT_VERSION,
+    round: state.session.currentRound,
+    company,
+    customerEdges,
+    dependencyEdges,
+  };
 }
 
 export function mockSubscribe(listener: EventListener): () => void {

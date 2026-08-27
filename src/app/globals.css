@@ -177,6 +177,17 @@ button { color: inherit; }
 .relation-preview span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .relation-preview i { color: var(--gold); font-style: normal; font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.08em; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-top: 0.65rem; }
+.section-hint { margin: -0.4rem 0 0.65rem; color: var(--muted); font-size: 0.7rem; }
+.selection-count { display: block; margin-top: 0.5rem; color: var(--muted); font-size: 0.66rem; }
+.dependency-rows { display: flex; flex-direction: column; gap: 0.65rem; margin-top: 0.55rem; }
+.dependency-row { position: relative; padding: 0.75rem; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,0.025); }
+.dependency-row-remove { position: absolute; top: 0.6rem; right: 0.6rem; border: 0; background: none; color: var(--muted); font-size: 0.7rem; cursor: pointer; }
+.dependency-row-remove:hover { color: var(--text); }
+.add-row-button { width: 100%; margin-top: 0.15rem; }
+.suggestion-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.55rem 0 0.65rem; }
+.suggestion-chips button { border: 1px solid #344a65; border-radius: 999px; padding: 0.4rem 0.72rem; background: rgba(255,255,255,0.03); color: #b9c8da; font-size: 0.66rem; cursor: pointer; transition: 140ms ease; }
+.suggestion-chips button:hover { border-color: var(--blue-soft); color: var(--text); }
+.suggestion-chips button.selected { border-color: var(--blue); background: rgba(54,120,255,0.14); color: var(--text); }
 .submit-button { width: 100%; min-height: 52px; }
 .small-disclaimer { color: #71849b; text-align: center; font-size: 0.66rem; line-height: 1.45; margin-top: 1.2rem; }
 .form-notice { padding: 0.72rem; margin: 0.75rem 0; border-radius: 9px; font-size: 0.72rem; line-height: 1.4; }
