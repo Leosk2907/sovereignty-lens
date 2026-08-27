@@ -1,0 +1,67 @@
+name: sovereignty-lens
+
+# All values come from a local .env file (copy .env.example to .env and fill it
+# in). No secrets are stored in this file. Variables written as ${VAR:?...} are
+# required - `docker compose up` fails fast with a readable message if they are
+# missing or empty.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sovereignty-lens-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Read by docker/initdb/01-application-role.sql when it creates the
+      # least-privilege role the API connects as.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+    ports:
+      # Loopback only: the database is never exposed to the Wi-Fi network.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Entrypoint scripts run once, on an empty data directory, before the
+      # database accepts external connections.
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sovereignty-lens-api:0.1.0
+    container_name: sovereignty-lens-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # Bound to all interfaces on purpose: phones on the same Wi-Fi must be
+      # able to reach the API through the QR code shown on the presentation.
+      - "0.0.0.0:8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:?set SPRING_DATASOURCE_URL in .env}
+      # The service runs as the restricted role: select/insert/update only.
+      SPRING_DATASOURCE_USERNAME: sovereignty_app
+      SPRING_DATASOURCE_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      # Schema changes need ownership, so Flyway alone connects as the owner.
+      # Spring Boot picks these up by relaxed binding; when they are absent it
+      # migrates with the datasource credentials instead.
+      SPRING_FLYWAY_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      SPRING_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD:?set APP_ADMIN_PASSWORD in .env}
+      APP_AUTH_SECRET: ${APP_AUTH_SECRET:?set APP_AUTH_SECRET in .env}
+      APP_CONTRIBUTOR_HASH_SECRET: ${APP_CONTRIBUTOR_HASH_SECRET:?set APP_CONTRIBUTOR_HASH_SECRET in .env}
+      APP_PUBLIC_BASE_URL: ${APP_PUBLIC_BASE_URL:?set APP_PUBLIC_BASE_URL in .env - use scripts/lan-url.sh or scripts/lan-url.ps1}
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?set APP_CORS_ALLOWED_ORIGINS in .env}
+
+volumes:
+  db_data:
+    name: sovereignty-lens-db-data

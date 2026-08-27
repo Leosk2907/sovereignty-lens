@@ -1,0 +1,51 @@
+# Build context is workstreams/backend - only pom.xml and src/ are needed to
+# build the jar. Everything below is excluded to keep the context small and to
+# avoid busting the Docker layer cache on unrelated edits.
+
+# Version control
+.git
+.gitignore
+.gitattributes
+.github
+
+# Maven build output
+target
+**/target
+
+# Node / frontend artifacts
+node_modules
+**/node_modules
+.next
+dist
+build
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+e2e/test-results
+e2e/playwright-report
+tests/test-results
+
+# IDE and editor directories
+.idea
+*.iml
+.vscode
+.settings
+.project
+.classpath
+*.swp
+.DS_Store
+
+# Documentation - not needed to build the jar
+*.md
+docs
+
+# Container / tooling files that must not invalidate the build cache
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+scripts
