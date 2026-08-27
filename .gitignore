@@ -1,0 +1,30 @@
+# Shared repo-root gitignore.
+# The Java backend lives under workstreams/backend/.
+
+# Maven build output
+workstreams/backend/target/
+**/target/
+
+# Local environment - never commit real secrets (.env.example is committed)
+**/.env
+**/.env.local
+.env
+.env.local
+
+# Node / frontend
+**/node_modules/
+
+# End-to-end test artifacts
+workstreams/backend/e2e/test-results/
+workstreams/backend/e2e/playwright-report/
+**/test-results/
+**/playwright-report/
+
+# IDE and editor
+.idea/
+*.iml
+.vscode/
+
+# OS noise
+.DS_Store
+Thumbs.db
