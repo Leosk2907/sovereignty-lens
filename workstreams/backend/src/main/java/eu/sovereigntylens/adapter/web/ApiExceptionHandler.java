@@ -6,17 +6,22 @@ import eu.sovereigntylens.domain.DomainException;
 import eu.sovereigntylens.mapper.ErrorMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
-import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -119,6 +124,28 @@ public class ApiExceptionHandler {
   }
 
   private ResponseEntity<ApiErrorResponse> respond(ApiErrorCode code, String message, String field) {
-    return ResponseEntity.status(code.status()).body(ApiErrorResponse.of(code, message, field));
+    allowJsonErrorBody();
+    return ResponseEntity.status(code.status())
+        // Preset deliberately, which makes Spring skip content negotiation for this response.
+        // Without it a request that accepts only text/event-stream cannot be given a JSON error
+        // body at all, and the failure to write one replaces a clean 404 with an opaque 500.
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(ApiErrorResponse.of(code, message, field));
+  }
+
+  /**
+   * Clears the media type the matched handler declared it produces.
+   *
+   * <p>The live-event stream is mapped as {@code text/event-stream}, and Spring records that on the
+   * request. It is the second of the two things that stop a JSON error envelope being written on
+   * that endpoint; the preset content type above is the first.
+   */
+  private static void allowJsonErrorBody() {
+    RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
+    if (attributes instanceof ServletRequestAttributes servletAttributes) {
+      servletAttributes
+          .getRequest()
+          .removeAttribute(HandlerMapping.PRODUCIBLE_MEDIA_TYPES_ATTRIBUTE);
+    }
   }
 }
