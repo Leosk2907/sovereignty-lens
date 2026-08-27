@@ -12,14 +12,15 @@ import cytoscape, {
 import type { GraphEdge, GraphNode, GraphSnapshot, Jurisdiction } from "@/lib/contracts";
 import { analyzeGraph } from "@/lib/graph-analysis";
 
-type JurisdictionGroup = "government" | "europe" | "external" | "unknown";
+type JurisdictionGroup = "government" | "europe" | "external";
 
 const groupColors: Record<JurisdictionGroup, string> = {
   government: "#d7e7df",
   europe: "#5798ba",
-  external: "#d9a45b",
-  unknown: "#6f818b",
+  external: "#d85f63",
 };
+
+type NodePosition = { x: number; y: number };
 
 const jurisdictionLabels: Record<Jurisdiction, string> = {
   europe: "Europe",
@@ -31,12 +32,109 @@ const jurisdictionLabels: Record<Jurisdiction, string> = {
 
 export function jurisdictionGroup(jurisdiction: Jurisdiction): JurisdictionGroup {
   if (jurisdiction === "europe") return "europe";
-  if (jurisdiction === "unknown") return "unknown";
   return "external";
 }
 
 export function graphNodeGroup(node: Pick<GraphNode, "organizationType" | "jurisdiction">): JurisdictionGroup {
   return node.organizationType === "government" ? "government" : jurisdictionGroup(node.jurisdiction);
+}
+
+export function groupSovereigntyZones(
+  nodes: GraphNode[],
+  basePositions: ReadonlyMap<string, NodePosition>,
+): Map<string, NodePosition> {
+  const grouped = new Map(
+    [...basePositions].map(([id, position]) => [id, { ...position }] as const),
+  );
+  const allPositions = [...basePositions.values()];
+  const minX = allPositions.length ? Math.min(...allPositions.map((position) => position.x)) : 0;
+  const maxX = allPositions.length ? Math.max(...allPositions.map((position) => position.x)) : 900;
+  const minY = allPositions.length ? Math.min(...allPositions.map((position) => position.y)) : 0;
+  const maxY = allPositions.length ? Math.max(...allPositions.map((position) => position.y)) : 600;
+  const horizontalRange = Math.max(maxX - minX, 900);
+  const verticalRange = Math.max(560, Math.min(maxY - minY, horizontalRange * 0.68));
+
+  const placeGroup = (
+    group: JurisdictionGroup,
+    startRatio: number,
+    endRatio: number,
+    reserveBottom = false,
+  ) => {
+    const groupNodes = nodes.filter((node) => graphNodeGroup(node) === group);
+    const groupPositions = groupNodes.flatMap((node) => {
+      const position = basePositions.get(node.id);
+      return position ? [{ node, position }] : [];
+    });
+    const localMinX = groupPositions.length ? Math.min(...groupPositions.map(({ position }) => position.x)) : 0;
+    const localMaxX = groupPositions.length ? Math.max(...groupPositions.map(({ position }) => position.x)) : 0;
+    const localMinY = groupPositions.length ? Math.min(...groupPositions.map(({ position }) => position.y)) : 0;
+    const localMaxY = groupPositions.length ? Math.max(...groupPositions.map(({ position }) => position.y)) : 0;
+
+    const xStart = minX + horizontalRange * startRatio;
+    const xEnd = minX + horizontalRange * endRatio;
+    const yStart = minY + verticalRange * 0.02;
+    const yEnd = minY + verticalRange * (reserveBottom ? 0.83 : 0.98);
+    const positioned = groupPositions.map(({ node, position }) => {
+      const xProgress = localMaxX === localMinX ? 0.5 : (position.x - localMinX) / (localMaxX - localMinX);
+      const yProgress = localMaxY === localMinY ? 0.5 : (position.y - localMinY) / (localMaxY - localMinY);
+      return {
+        id: node.id,
+        x: xStart + (xEnd - xStart) * xProgress,
+        y: yStart + (yEnd - yStart) * yProgress,
+      };
+    });
+
+    const minimumDistance = group === "europe" ? 54 : group === "external" ? 92 : 72;
+    for (let iteration = 0; iteration < 14; iteration += 1) {
+      for (let leftIndex = 0; leftIndex < positioned.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < positioned.length; rightIndex += 1) {
+          const left = positioned[leftIndex];
+          const right = positioned[rightIndex];
+          let deltaX = right.x - left.x;
+          let deltaY = right.y - left.y;
+          let distance = Math.hypot(deltaX, deltaY);
+          if (distance >= minimumDistance) continue;
+          if (distance < 0.01) {
+            deltaX = rightIndex % 2 === 0 ? 1 : -1;
+            deltaY = 1;
+            distance = Math.SQRT2;
+          }
+          const push = (minimumDistance - distance) / 2;
+          const pushX = (deltaX / distance) * push;
+          const pushY = (deltaY / distance) * push;
+          left.x = Math.max(xStart, Math.min(xEnd, left.x - pushX));
+          left.y = Math.max(yStart, Math.min(yEnd, left.y - pushY));
+          right.x = Math.max(xStart, Math.min(xEnd, right.x + pushX));
+          right.y = Math.max(yStart, Math.min(yEnd, right.y + pushY));
+        }
+      }
+    }
+
+    if (group === "external") {
+      for (let iteration = 0; iteration < 10; iteration += 1) {
+        for (let leftIndex = 0; leftIndex < positioned.length; leftIndex += 1) {
+          for (let rightIndex = leftIndex + 1; rightIndex < positioned.length; rightIndex += 1) {
+            const left = positioned[leftIndex];
+            const right = positioned[rightIndex];
+            if (Math.abs(right.x - left.x) >= 150 || Math.abs(right.y - left.y) >= 62) continue;
+            const direction = left.y === right.y
+              ? (leftIndex + rightIndex) % 2 === 0 ? -1 : 1
+              : left.y < right.y ? -1 : 1;
+            const push = (62 - Math.abs(right.y - left.y)) / 2;
+            left.y = Math.max(yStart, Math.min(yEnd, left.y + direction * push));
+            right.y = Math.max(yStart, Math.min(yEnd, right.y - direction * push));
+          }
+        }
+      }
+    }
+
+    positioned.forEach(({ id, x, y }) => grouped.set(id, { x, y }));
+  };
+
+  placeGroup("government", 0, 0.08);
+  placeGroup("europe", 0.16, 0.68);
+  placeGroup("external", 0.76, 1, true);
+  return grouped;
 }
 
 interface GraphCanvasProps {
@@ -62,19 +160,29 @@ function nodeData(node: GraphNode, rootId: string) {
   };
 }
 
-function edgeData(edge: GraphEdge) {
+function edgeData(edge: GraphEdge, nodeById: ReadonlyMap<string, GraphNode>) {
+  const target = nodeById.get(edge.targetOrganizationId);
+  const targetGroup = target ? graphNodeGroup(target) : "external";
+  const palette = targetGroup === "external"
+    ? { line: "#8a4147", arrow: "#e16b70", activeLine: "#c85358", activeArrow: "#ff9a9d" }
+    : { line: "#456875", arrow: "#7ea1ae", activeLine: "#68a9c9", activeArrow: "#b3dceb" };
   return {
     id: edge.id,
     source: edge.sourceOrganizationId,
     target: edge.targetOrganizationId,
     seed: edge.isSeed ? "yes" : "no",
+    lineColor: palette.line,
+    arrowColor: palette.arrow,
+    activeLineColor: palette.activeLine,
+    activeArrowColor: palette.activeArrow,
   };
 }
 
 function graphElements(snapshot: GraphSnapshot): ElementDefinition[] {
+  const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]));
   return [
     ...snapshot.nodes.map((node) => ({ data: nodeData(node, snapshot.session.rootOrganizationId) })),
-    ...snapshot.edges.map((edge) => ({ data: edgeData(edge) })),
+    ...snapshot.edges.map((edge) => ({ data: edgeData(edge, nodeById) })),
   ];
 }
 
@@ -119,16 +227,13 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
     {
       selector: "edge",
       css: {
-        width: 1.5,
-        "line-color": "#36505d",
-        "target-arrow-color": "#68808b",
+        width: 2,
+        "line-color": "data(lineColor)",
+        "target-arrow-color": "data(arrowColor)",
         "target-arrow-shape": "triangle",
-        "curve-style": "round-taxi",
-        "taxi-direction": "rightward",
-        "taxi-turn": "50%",
-        "taxi-radius": 9,
-        "arrow-scale": 0.72,
-        opacity: 0.82,
+        "curve-style": "bezier",
+        "arrow-scale": 0.9,
+        opacity: 0.84,
         "line-cap": "round",
         "transition-property": "width line-color target-arrow-color opacity",
         "transition-duration": 160,
@@ -142,7 +247,7 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
       selector: "node.path-node",
       css: {
         opacity: 1,
-        "border-color": "#f0c274",
+        "border-color": "#f08a8d",
         "border-opacity": 0.9,
         "border-width": 4,
       },
@@ -152,8 +257,8 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
       css: {
         opacity: 1,
         width: 3,
-        "line-color": "#d9a45b",
-        "target-arrow-color": "#f0c274",
+        "line-color": "#d85f63",
+        "target-arrow-color": "#f08a8d",
         "line-style": "dashed",
         "line-dash-pattern": [7, 5],
       },
@@ -180,8 +285,8 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
       css: {
         opacity: 1,
         width: 3,
-        "line-color": "#78b2cf",
-        "target-arrow-color": "#a8d0e3",
+        "line-color": "data(activeLineColor)",
+        "target-arrow-color": "data(activeArrowColor)",
         "line-style": "dashed",
         "line-dash-pattern": [7, 5],
       },
@@ -199,8 +304,8 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
       css: {
         opacity: 1,
         width: 3,
-        "line-color": "#68a9c9",
-        "target-arrow-color": "#b3dceb",
+        "line-color": "data(activeLineColor)",
+        "target-arrow-color": "data(activeArrowColor)",
         "line-style": "dashed",
         "line-dash-pattern": [8, 5],
       },
@@ -208,13 +313,13 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
     {
       selector: "edge.path-edge.latest-edge",
       css: {
-        "line-color": "#d9a45b",
-        "target-arrow-color": "#f0c274",
+        "line-color": "#d85f63",
+        "target-arrow-color": "#f08a8d",
       },
     },
     {
       selector: "node.path-node.latest-node",
-      css: { "border-color": "#f0c274" },
+      css: { "border-color": "#f08a8d" },
     },
     {
       selector: ".entering",
@@ -232,6 +337,7 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animatedLatestRef = useRef<string | null>(null);
   const reduceMotion = useReducedMotion();
+  const [graphReady, setGraphReady] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [edgeDetail, setEdgeDetail] = useState<string | null>(null);
@@ -256,16 +362,15 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
       wheelSensitivity: 0.18,
       selectionType: "single",
       layout: {
-        name: "breadthfirst",
-        directed: true,
-        direction: "rightward",
+        name: "grid",
         padding: compact ? 30 : 54,
-        spacingFactor: compact ? 1.02 : 1.2,
-        nodeDimensionsIncludeLabels: true,
+        avoidOverlap: true,
+        condense: false,
         animate: false,
       },
     });
     graphRef.current = graph;
+    setGraphReady(true);
 
     const describeEdge = (edge: EdgeSingular) => {
       const source = edge.source().data("label") as string;
@@ -319,9 +424,10 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
 
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph) return;
+    if (!graph || !graphReady) return;
     const nodeIds = new Set(snapshot.nodes.map((node) => node.id));
     const edgeIds = new Set(snapshot.edges.map((edge) => edge.id));
+    const snapshotNodeById = new Map(snapshot.nodes.map((node) => [node.id, node]));
     const topology = `${[...nodeIds].sort().join(",")}|${[...edgeIds].sort().join(",")}`;
 
     graph.startBatch();
@@ -349,8 +455,12 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
     }
     for (const edge of snapshot.edges) {
       const existing = graph.getElementById(edge.id);
-      if (existing.length) existing.data(edgeData(edge));
-      else graph.add({ group: "edges", classes: topologyRef.current ? "entering" : "", data: edgeData(edge) });
+      if (existing.length) existing.data(edgeData(edge, snapshotNodeById));
+      else graph.add({
+        group: "edges",
+        classes: topologyRef.current ? "entering" : "",
+        data: edgeData(edge, snapshotNodeById),
+      });
     }
     graph.endBatch();
 
@@ -361,19 +471,36 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
 
       const runLayout = () => {
         const layoutOptions = {
-          name: "breadthfirst",
-          directed: true,
-          direction: "rightward",
-          roots: graph.getElementById(snapshot.session.rootOrganizationId),
+          name: "cose",
           padding: compact ? 30 : 54,
-          spacingFactor: compact ? 1.02 : 1.2,
-          nodeDimensionsIncludeLabels: true,
+          fit: false,
+          animate: false,
+          randomize: false,
+          idealEdgeLength: compact ? 82 : 105,
+          nodeRepulsion: compact ? 300_000 : 480_000,
+          edgeElasticity: 110,
+          nestingFactor: 1.2,
+          gravity: 0.28,
+          numIter: 800,
+          initialTemp: 150,
+          coolingFactor: 0.96,
+          minTemp: 1,
+          nodeOverlap: compact ? 12 : 20,
+          componentSpacing: 100,
         } as const;
 
         graph.stop();
         graph.nodes().stop();
         if (isInitialLayout || reduceMotion) {
-          graph.layout({ ...layoutOptions, fit: true, animate: false }).run();
+          graph.layout({ ...layoutOptions, fit: false, animate: false }).run();
+          const basePositions = new Map(
+            graph.nodes().map((node) => [node.id(), { ...node.position() }] as const),
+          );
+          const groupedPositions = groupSovereigntyZones(snapshot.nodes, basePositions);
+          graph.nodes().forEach((node) => {
+            node.position(groupedPositions.get(node.id()) ?? node.position());
+          });
+          graph.fit(graph.elements(), compact ? 30 : 54);
           graph.elements(".entering").removeClass("entering");
           return;
         }
@@ -385,9 +512,13 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
         const currentPan = { ...graph.pan() };
 
         graph.layout({ ...layoutOptions, fit: false, animate: false }).run();
-        const targetPositions = new Map(
+        const baseTargetPositions = new Map(
           graph.nodes().map((node) => [node.id(), { ...node.position() }] as const),
         );
+        const targetPositions = groupSovereigntyZones(snapshot.nodes, baseTargetPositions);
+        graph.nodes().forEach((node) => {
+          node.position(targetPositions.get(node.id()) ?? node.position());
+        });
         graph.fit(graph.elements(), compact ? 30 : 54);
         const targetZoom = graph.zoom();
         const targetPan = { ...graph.pan() };
@@ -409,10 +540,11 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
         );
       };
 
-      if (isInitialLayout || reduceMotion) runLayout();
+      if (isInitialLayout) layoutTimerRef.current = setTimeout(runLayout, 60);
+      else if (reduceMotion) runLayout();
       else layoutTimerRef.current = setTimeout(runLayout, 140);
     }
-  }, [snapshot, latestEdgeId, compact, reduceMotion]);
+  }, [snapshot, latestEdgeId, compact, reduceMotion, graphReady]);
 
   useEffect(() => {
     if (selectedNodeId && !snapshot.nodes.some((node) => node.id === selectedNodeId)) setSelectedNodeId(null);

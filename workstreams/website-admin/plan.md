@@ -55,8 +55,11 @@ authoritative. Import all types and Zod schemas from `src/lib/contracts.ts`.
 9. Add unit/component/end-to-end tests and verify at mobile and presentation
    dimensions.
 10. Refine the live experience into a deep-ink, graph-first visual system with
-    Geist typography, a unified Europe/external/unknown palette, incremental
-    Cytoscape interaction, and focused Motion transitions.
+    Geist typography, a three-group government/Europe/external palette,
+    incremental Cytoscape interaction, and focused Motion transitions.
+11. Use loose sovereignty zones for node placement: government at left, an
+    organic European field in the middle, and red external or unresolved nodes
+    at right. Let curved dependency edges cross freely without ranks or lanes.
 
 ## Acceptance criteria
 

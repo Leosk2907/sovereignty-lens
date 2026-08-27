@@ -13,8 +13,8 @@
   --government-bright: #eff7f3;
   --europe: #5798ba;
   --europe-bright: #88c1da;
-  --external: #d9a45b;
-  --external-bright: #f0c274;
+  --external: #d85f63;
+  --external-bright: #f08a8d;
   --unknown: #6f818b;
   --success: #77a995;
   --font-sans: var(--font-geist-sans), Geist, Arial, sans-serif;
@@ -89,7 +89,7 @@ button { color: inherit; }
 .button.primary { color: #06131b; border-color: var(--europe-bright); background: var(--europe-bright); }
 .button.primary:hover:not(:disabled) { border-color: #a6d8e8; background: #a6d8e8; }
 .button.secondary, .button.ghost { background: transparent; }
-.button.warning { color: #f0c274; border-color: #806236; background: rgba(217, 164, 91, 0.1); }
+.button.warning { color: #f08a8d; border-color: #783b40; background: rgba(216, 95, 99, 0.1); }
 .button.danger { color: #d8d0f4; border-color: #74679a; background: rgba(151, 131, 206, 0.1); }
 .button-row { display: flex; gap: 0.45rem; }
 
@@ -120,7 +120,7 @@ button { color: inherit; }
 }
 .connection-pill i { width: 6px; height: 6px; border-radius: 50%; background: var(--unknown); }
 .connection-pill.live i { background: var(--success); box-shadow: 0 0 0 3px rgba(119, 169, 149, 0.08); }
-.connection-pill.degraded i { background: var(--external); box-shadow: 0 0 0 3px rgba(217, 164, 91, 0.08); }
+.connection-pill.degraded i { background: var(--external); box-shadow: 0 0 0 3px rgba(216, 95, 99, 0.08); }
 
 .graph-frame {
   position: relative;
@@ -177,7 +177,7 @@ button { color: inherit; }
 .jurisdiction-dot.united_states,
 .jurisdiction-dot.china,
 .jurisdiction-dot.other_external { background: var(--external); }
-.micro-key .unknown, .jurisdiction-dot.unknown { background: var(--unknown); }
+.jurisdiction-dot.unknown { background: var(--external); }
 
 .qr-dock {
   position: absolute;
@@ -221,7 +221,7 @@ button { color: inherit; }
   justify-content: space-between;
   gap: 1rem;
   padding: 0.78rem 0.9rem;
-  border: 1px solid #806236;
+  border: 1px solid #783b40;
   border-radius: 7px;
   background: rgba(16, 37, 50, 0.96);
   box-shadow: 0 18px 55px rgba(0, 0, 0, 0.3);
@@ -410,7 +410,7 @@ button { color: inherit; }
 .dependency-row-heading button:hover { color: var(--text); }
 .suggestion-chips { display: flex; flex-wrap: wrap; gap: 0.38rem; margin: 0.65rem 0 0.15rem; }
 .suggestion-chips button { padding: 0.38rem 0.65rem; font-size: 0.59rem; }
-.suggestion-chips button[aria-pressed="true"] { color: var(--external-bright); border-color: #806236; background: rgba(217, 164, 91, 0.1); }
+.suggestion-chips button[aria-pressed="true"] { color: var(--external-bright); border-color: #783b40; background: rgba(216, 95, 99, 0.1); }
 .add-row-button { width: 100%; min-height: 44px; margin-top: 0.7rem; color: var(--muted); border-style: dashed; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; margin-top: 0.7rem; }
 .submit-button { width: 100%; min-height: 50px; }

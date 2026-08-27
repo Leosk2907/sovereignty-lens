@@ -24,7 +24,7 @@ import {
 } from "@/lib/contracts";
 import { populatedDemoGraphFixture } from "@/lib/fixtures";
 
-const STATE_KEY = "sovereignty-lens.mock-state.v3";
+const STATE_KEY = "sovereignty-lens.mock-state.v4";
 const AUTH_KEY = "sovereignty-lens.mock-admin.v1";
 const CHANNEL_NAME = "sovereignty-lens.mock-events.v1";
 

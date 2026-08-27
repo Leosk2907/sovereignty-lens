@@ -78,13 +78,13 @@ never present it as a factual allegation.
 
 - Use a refined deep-ink interface dominated by the interactive graph. Keep
   chrome minimal, place the question `What does Europe depend on?` inside the
-  graph, and reserve warning amber for external dependencies.
+  graph, and reserve warning red for external dependencies.
 - Root the graph at the fictional **European Digital Services Agency**.
 - Show directed arrows with the semantic `source depends on target`.
 - Keep a QR code and short participation instruction visible.
-- Use these visual groups: government bodies in pale mineral white, Europe in
-  blue, all external jurisdictions in warning amber, and unknown in slate.
-  Exact jurisdiction remains available on node focus.
+- Use three visual groups: government bodies in pale mineral white, Europe in
+  blue, and external or unresolved dependencies in warning red. Exact
+  jurisdiction remains available on node focus.
 - Show only the reachable external count publicly; keep operational metrics in
   admin.
 - Animate ordinary contributions directly in the graph without a toast.
@@ -330,6 +330,11 @@ subscription and reconciliation.
 ## Graph behavior
 
 - Treat an edge as directed from the depending organization to its dependency.
+- Keep governmental bodies in a loose left zone, European companies in an
+  organic middle field, and external or unresolved organizations in a red right
+  zone. Do not impose ranks or lanes on dependency edges.
+- Support cross-European dependencies, cycles, and freely crossing curved edges
+  without assuming the graph is a clean tree.
 - Run breadth-first search from the root over active directed edges.
 - Record predecessor and depth during traversal.
 - External jurisdictions are `united_states`, `china`, and `other_external`.

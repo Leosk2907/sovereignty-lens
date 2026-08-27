@@ -76,7 +76,6 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
           <Legend color="government" label="Government" />
           <Legend color="europe" label="Europe" />
           <Legend color="external" label="External" />
-          <Legend color="unknown" label="Unknown" />
         </div>
 
         {mode === "public" && (
@@ -124,6 +123,6 @@ export function LiveGraphExperience({ mode = "public", onAdminLogout }: LiveGrap
   return <main className="presentation-shell">{graphArea}</main>;
 }
 
-function Legend({ color, label }: { color: "government" | "europe" | "external" | "unknown"; label: string }) {
+function Legend({ color, label }: { color: "government" | "europe" | "external"; label: string }) {
   return <span><i className={color} />{label}</span>;
 }
