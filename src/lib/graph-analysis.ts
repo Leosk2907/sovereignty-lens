@@ -15,6 +15,18 @@ export interface GraphAnalysis {
   shortestPathTo: (targetId: string) => string[];
 }
 
+export interface DependencyGraphSummary {
+  organizationCount: number;
+  governmentCount: number;
+  europeanCompanyCount: number;
+  dependencyCount: number;
+  directDependencyCount: number;
+  reachableDependencyCount: number;
+  reachableEuropeanCompanyCount: number;
+  reachableExternalCount: number;
+  maximumDepth: number;
+}
+
 export function analyzeGraph(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -87,5 +99,33 @@ export function analyzeGraph(
     depth,
     maximumDepth,
     shortestPathTo,
+  };
+}
+
+export function summarizeDependencyGraph(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  rootId: string,
+): DependencyGraphSummary {
+  const analysis = analyzeGraph(nodes, edges, rootId);
+  const activeEdges = edges.filter((edge) => edge.status === "active");
+  const reachableNodes = nodes.filter((node) => analysis.reachableIds.has(node.id));
+
+  return {
+    organizationCount: nodes.length,
+    governmentCount: nodes.filter((node) => node.organizationType === "government").length,
+    europeanCompanyCount: nodes.filter(
+      (node) => node.jurisdiction === "europe" && node.organizationType !== "government",
+    ).length,
+    dependencyCount: activeEdges.length,
+    directDependencyCount: activeEdges.filter((edge) => edge.sourceOrganizationId === rootId).length,
+    reachableDependencyCount: Math.max(analysis.reachableIds.size - 1, 0),
+    reachableEuropeanCompanyCount: reachableNodes.filter(
+      (node) => node.id !== rootId
+        && node.jurisdiction === "europe"
+        && node.organizationType !== "government",
+    ).length,
+    reachableExternalCount: analysis.reachableExternalIds.size,
+    maximumDepth: analysis.maximumDepth,
   };
 }

@@ -133,7 +133,7 @@ export function groupSovereigntyZones(
 
   placeGroup("government", 0, 0.08);
   placeGroup("europe", 0.16, 0.68);
-  placeGroup("external", 0.76, 1, true);
+  placeGroup("external", 0.76, 1);
   return grouped;
 }
 
@@ -142,6 +142,8 @@ interface GraphCanvasProps {
   revealPath: string[];
   latestEdgeId: string | null;
   compact?: boolean;
+  onGovernmentHover?: (nodeId: string | null) => void;
+  onGovernmentSelect?: (nodeId: string | null) => void;
 }
 
 function nodeData(node: GraphNode, rootId: string) {
@@ -264,6 +266,13 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
       },
     },
     {
+      selector: "edge.network-edge",
+      css: {
+        opacity: 0.96,
+        width: 2.4,
+      },
+    },
+    {
       selector: "node.focus-node",
       css: {
         label: "data(detailLabel)",
@@ -328,7 +337,14 @@ function graphStyles(compact: boolean): StylesheetCSS[] {
   ];
 }
 
-export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = false }: GraphCanvasProps) {
+export function GraphCanvas({
+  snapshot,
+  revealPath,
+  latestEdgeId,
+  compact = false,
+  onGovernmentHover,
+  onGovernmentSelect,
+}: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Core | null>(null);
   const initialSnapshotRef = useRef(snapshot);
@@ -336,6 +352,9 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
   const layoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animatedLatestRef = useRef<string | null>(null);
+  const selectedNodeIdRef = useRef<string | null>(null);
+  const onGovernmentHoverRef = useRef(onGovernmentHover);
+  const onGovernmentSelectRef = useRef(onGovernmentSelect);
   const reduceMotion = useReducedMotion();
   const [graphReady, setGraphReady] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -347,8 +366,25 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
     [snapshot],
   );
   const focusedNodeId = selectedNodeId ?? hoveredNodeId;
+  const focusedGovernmentId = focusedNodeId && snapshot.nodes.some(
+    (node) => node.id === focusedNodeId && node.organizationType === "government",
+  ) ? focusedNodeId : null;
   const interactionPath = focusedNodeId ? analysis.shortestPathTo(focusedNodeId) : [];
   const activePath = revealPath.length > 1 ? revealPath : interactionPath;
+  const focusedGovernmentAnalysis = useMemo(
+    () => focusedGovernmentId
+      ? analyzeGraph(snapshot.nodes, snapshot.edges, focusedGovernmentId)
+      : null,
+    [focusedGovernmentId, snapshot],
+  );
+
+  useEffect(() => {
+    onGovernmentHoverRef.current = onGovernmentHover;
+  }, [onGovernmentHover]);
+
+  useEffect(() => {
+    onGovernmentSelectRef.current = onGovernmentSelect;
+  }, [onGovernmentSelect]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -384,14 +420,30 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
       edge.animate({ style: { "line-dash-offset": -18 } }, { duration: 620, easing: "ease-out" });
     };
 
-    graph.on("mouseover", "node", (event) => setHoveredNodeId((event.target as NodeSingular).id()));
-    graph.on("mouseout", "node", () => setHoveredNodeId(null));
+    graph.on("mouseover", "node", (event) => {
+      const node = event.target as NodeSingular;
+      setHoveredNodeId(node.id());
+      onGovernmentHoverRef.current?.(node.data("kind") === "government" ? node.id() : null);
+    });
+    graph.on("mouseout", "node", () => {
+      setHoveredNodeId(null);
+      onGovernmentHoverRef.current?.(null);
+    });
     graph.on("tap", "node", (event) => {
-      const id = (event.target as NodeSingular).id();
-      setSelectedNodeId((current) => current === id ? null : id);
+      const node = event.target as NodeSingular;
+      const id = node.id();
+      const nextId = selectedNodeIdRef.current === id ? null : id;
+      selectedNodeIdRef.current = nextId;
+      setSelectedNodeId(nextId);
+      onGovernmentSelectRef.current?.(
+        nextId && node.data("kind") === "government" ? nextId : null,
+      );
     });
     graph.on("tap", (event) => {
-      if (event.target === graph) setSelectedNodeId(null);
+      if (event.target !== graph) return;
+      selectedNodeIdRef.current = null;
+      setSelectedNodeId(null);
+      onGovernmentSelectRef.current?.(null);
     });
     graph.on("mouseover", "edge", (event) => {
       const edge = event.target as EdgeSingular;
@@ -547,13 +599,16 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
   }, [snapshot, latestEdgeId, compact, reduceMotion, graphReady]);
 
   useEffect(() => {
-    if (selectedNodeId && !snapshot.nodes.some((node) => node.id === selectedNodeId)) setSelectedNodeId(null);
+    if (!selectedNodeId || snapshot.nodes.some((node) => node.id === selectedNodeId)) return;
+    selectedNodeIdRef.current = null;
+    setSelectedNodeId(null);
+    onGovernmentSelectRef.current?.(null);
   }, [selectedNodeId, snapshot.nodes]);
 
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph) return;
-    graph.elements().removeClass("dimmed path-node path-edge focus-node");
+    graph.elements().removeClass("dimmed path-node path-edge network-node network-edge focus-node");
 
     if (activePath.length > 1) {
       graph.elements().addClass("dimmed");
@@ -563,6 +618,17 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
         const target = activePath[index];
         graph.edges(`[source = "${source}"][target = "${target}"]`).removeClass("dimmed").addClass("path-edge");
       }
+    } else if (focusedGovernmentAnalysis) {
+      graph.elements().addClass("dimmed");
+      for (const nodeId of focusedGovernmentAnalysis.reachableIds) {
+        graph.getElementById(nodeId).removeClass("dimmed").addClass("network-node");
+      }
+      graph.edges().forEach((edge) => {
+        if (
+          focusedGovernmentAnalysis.reachableIds.has(edge.source().id())
+          && focusedGovernmentAnalysis.reachableIds.has(edge.target().id())
+        ) edge.removeClass("dimmed").addClass("network-edge");
+      });
     }
 
     if (focusedNodeId) graph.getElementById(focusedNodeId).addClass("focus-node").removeClass("dimmed");
@@ -574,7 +640,7 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
         edge.animate({ style: { "line-dash-offset": -18 } }, { duration: 680, easing: "ease-out" });
       });
     }
-  }, [activePath, focusedNodeId, reduceMotion]);
+  }, [activePath, focusedGovernmentAnalysis, focusedNodeId, reduceMotion]);
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -594,7 +660,10 @@ export function GraphCanvas({ snapshot, revealPath, latestEdgeId, compact = fals
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedNodeId(null);
+      if (event.key !== "Escape") return;
+      selectedNodeIdRef.current = null;
+      setSelectedNodeId(null);
+      onGovernmentSelectRef.current?.(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

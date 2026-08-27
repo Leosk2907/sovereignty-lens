@@ -60,6 +60,9 @@ authoritative. Import all types and Zod schemas from `src/lib/contracts.ts`.
 11. Use loose sovereignty zones for node placement: government at left, an
     organic European field in the middle, and red external or unresolved nodes
     at right. Let curved dependency edges cross freely without ranks or lanes.
+12. Reserve a contextual statistics rail beside the graph. Show whole-network
+    figures by default, switch to a governmental body's dependency network on
+    hover, and persist that highlight when the node is selected.
 
 ## Acceptance criteria
 

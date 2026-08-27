@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GraphEdge, GraphNode } from "@/lib/contracts";
-import { analyzeGraph } from "@/lib/graph-analysis";
+import { analyzeGraph, summarizeDependencyGraph } from "@/lib/graph-analysis";
 
 const nodes: GraphNode[] = [
   { id: "00000000-0000-4000-8000-000000000001", name: "Root", organizationType: "government", jurisdiction: "europe", isSeed: true },
@@ -33,5 +33,26 @@ describe("analyzeGraph", () => {
 
     expect(analysis.reachableIds.size).toBe(2);
     expect(analysis.reachableExternalIds.size).toBe(0);
+  });
+
+  it("summarizes global and government dependency statistics", () => {
+    const edges = [
+      edge("00000000-0000-4000-8000-000000000105", nodes[0].id, nodes[1].id),
+      edge("00000000-0000-4000-8000-000000000106", nodes[1].id, nodes[2].id),
+      edge("00000000-0000-4000-8000-000000000107", nodes[1].id, nodes[3].id),
+    ];
+    const summary = summarizeDependencyGraph(nodes, edges, nodes[0].id);
+
+    expect(summary).toMatchObject({
+      organizationCount: 4,
+      governmentCount: 1,
+      europeanCompanyCount: 1,
+      dependencyCount: 3,
+      directDependencyCount: 1,
+      reachableDependencyCount: 3,
+      reachableEuropeanCompanyCount: 1,
+      reachableExternalCount: 1,
+      maximumDepth: 2,
+    });
   });
 });

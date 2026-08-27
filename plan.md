@@ -87,6 +87,10 @@ never present it as a factual allegation.
   jurisdiction remains available on node focus.
 - Show only the reachable external count publicly; keep operational metrics in
   admin.
+- Reserve a right-side dashboard for whole-graph statistics. Hovering a
+  governmental body temporarily replaces those figures with its direct and
+  transitive dependency statistics; clicking the body pins that highlight and
+  dashboard until it is released.
 - Animate ordinary contributions directly in the graph without a toast.
 - When a newly reachable external organization appears, animate the shortest
   path and show a message such as `Hidden dependency revealed: 3 steps to a US

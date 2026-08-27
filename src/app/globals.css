@@ -123,6 +123,7 @@ button { color: inherit; }
 .connection-pill.degraded i { background: var(--external); box-shadow: 0 0 0 3px rgba(216, 95, 99, 0.08); }
 
 .graph-frame {
+  --stats-rail-width: clamp(280px, 21vw, 324px);
   position: relative;
   flex: 1 1 auto;
   min-height: 500px;
@@ -133,6 +134,7 @@ button { color: inherit; }
 }
 .graph-canvas-shell, .graph-canvas { position: absolute; inset: 0; }
 .graph-canvas-shell { z-index: 1; }
+.graph-frame.has-stats .graph-canvas-shell { right: var(--stats-rail-width); }
 
 .graph-question { position: absolute; z-index: 3; top: 1.35rem; left: 1.5rem; width: min(34vw, 470px); pointer-events: none; }
 .graph-question h1 {
@@ -179,23 +181,76 @@ button { color: inherit; }
 .jurisdiction-dot.other_external { background: var(--external); }
 .jurisdiction-dot.unknown { background: var(--external); }
 
-.qr-dock {
+.graph-stats-panel {
   position: absolute;
   z-index: 4;
+  top: 0;
   right: 0;
   bottom: 0;
+  width: var(--stats-rail-width);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: rgba(7, 20, 29, 0.94);
+  backdrop-filter: blur(14px);
+}
+.graph-stats-content { min-height: 0; flex: 1 1 auto; padding: 1.25rem 1.2rem 1rem; }
+.graph-stats-view h2 {
+  min-height: 2.7em;
+  margin: 0.65rem 0 0;
+  font-size: clamp(1.1rem, 1.6vw, 1.42rem);
+  font-weight: 530;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+.graph-stats-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.graph-stats-heading span,
+.graph-stats-heading i,
+.graph-stats-hero span,
+.graph-stats-grid dt {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  font-style: normal;
+  line-height: 1.35;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.graph-stats-heading i { color: var(--government); }
+.graph-stats-hero { display: flex; align-items: flex-start; gap: 0.7rem; margin: 1.45rem 0 1.6rem; }
+.graph-stats-hero strong {
+  color: var(--external-bright);
+  font-size: clamp(3rem, 4vw, 4.4rem);
+  font-weight: 470;
+  line-height: 0.78;
+  letter-spacing: -0.065em;
+}
+.graph-stats-hero span { padding-top: 0.12rem; }
+.graph-stats-grid { display: grid; grid-template-columns: 1fr 1fr; margin: 0; border-top: 1px solid var(--line); }
+.graph-stats-grid div { min-width: 0; display: flex; flex-direction: column; padding: 0.82rem 0.35rem 0.8rem 0; border-bottom: 1px solid var(--line); }
+.graph-stats-grid div:nth-child(odd) { border-right: 1px solid var(--line); }
+.graph-stats-grid div:nth-child(even) { padding-left: 0.8rem; }
+.graph-stats-grid dd { order: -1; margin: 0 0 0.3rem; font-size: 1.45rem; font-weight: 500; line-height: 1; letter-spacing: -0.05em; }
+.graph-stats-grid dt { max-width: 95px; }
+.graph-stats-hint { margin: 1rem 0 0; color: var(--faint); font-size: 0.61rem; line-height: 1.5; }
+
+.graph-stats-panel .qr-dock {
+  position: static;
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.72rem;
-  padding: 0.58rem;
+  gap: 0.8rem;
+  padding: 0.82rem;
   border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-  background: rgba(7, 20, 29, 0.96);
+  background: rgba(5, 16, 23, 0.88);
 }
 .qr-dock svg { display: block; border-radius: 3px; }
-.qr-dock div { width: 128px; padding-right: 0.25rem; }
+.qr-dock div { min-width: 0; padding-right: 0.25rem; }
 .qr-dock span { display: block; color: var(--muted); font-family: var(--font-mono); font-size: 0.5rem; letter-spacing: 0.07em; text-transform: uppercase; }
 .qr-dock strong { display: block; margin-top: 0.28rem; font-size: 0.87rem; font-weight: 570; line-height: 1.2; }
+
+.graph-frame.has-stats .demo-disclaimer,
+.graph-frame.has-stats .reveal-strip { left: calc((100% - var(--stats-rail-width)) / 2); }
 
 .demo-disclaimer {
   position: absolute;
@@ -461,18 +516,34 @@ button { color: inherit; }
   .presentation-shell { padding: 0 0.6rem 0.6rem; overflow: visible; }
   .presentation-header { height: 48px; }
   .graph-frame { min-height: calc(100dvh - 58px); border-radius: 9px; }
+  .graph-frame.has-stats .graph-canvas-shell { right: 0; bottom: 218px; }
   .graph-question { top: 1rem; left: 1rem; width: 58vw; }
   .graph-question h1 { font-size: 2.2rem; }
   .exposure-count { top: 1.05rem; right: 1rem; gap: 0.4rem; }
   .exposure-count strong { font-size: 1.8rem; }
   .exposure-count span { display: none; }
-  .micro-key { bottom: 0.7rem; left: 0.75rem; gap: 0.55rem; }
+  .micro-key { bottom: 225px; left: 0.75rem; gap: 0.55rem; }
   .micro-key span { font-size: 0.46rem; }
-  .demo-disclaimer { left: 0.75rem; bottom: 2rem; width: calc(100% - 100px); transform: none; font-size: 0.42rem; white-space: normal; }
-  .qr-dock { padding: 0.42rem; }
+  .demo-disclaimer { left: 0.75rem; bottom: 242px; width: calc(100% - 1.5rem); transform: none; font-size: 0.42rem; white-space: normal; }
+  .graph-stats-panel { top: auto; left: 0; width: 100%; height: 218px; flex-direction: row; border-top: 1px solid var(--line); border-left: 0; }
+  .graph-stats-content { padding: 0.72rem 0.8rem; }
+  .graph-stats-view h2 { min-height: 0; margin-top: 0.3rem; max-width: 240px; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .graph-stats-hero { position: absolute; top: 0.75rem; right: 90px; margin: 0; gap: 0.4rem; }
+  .graph-stats-hero strong { font-size: 2rem; }
+  .graph-stats-hero span { display: none; }
+  .graph-stats-grid { margin-top: 0.7rem; grid-template-columns: repeat(4, 1fr); }
+  .graph-stats-grid div,
+  .graph-stats-grid div:nth-child(even) { padding: 0.55rem 0.25rem 0.45rem; border-right: 1px solid var(--line); }
+  .graph-stats-grid div:last-child { border-right: 0; }
+  .graph-stats-grid dd { font-size: 1.05rem; }
+  .graph-stats-grid dt { font-size: 0.4rem; }
+  .graph-stats-hint { margin-top: 0.55rem; font-size: 0.5rem; }
+  .graph-stats-panel .qr-dock { width: 82px; flex: 0 0 82px; justify-content: center; padding: 0.4rem; border-top: 0; border-left: 1px solid var(--line); }
   .qr-dock div { display: none; }
   .qr-dock svg { width: 68px; height: 68px; }
-  .reveal-strip { bottom: 5rem; flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+  .graph-frame.has-stats .demo-disclaimer,
+  .graph-frame.has-stats .reveal-strip { left: 0.75rem; }
+  .reveal-strip { bottom: 230px; flex-direction: column; align-items: flex-start; gap: 0.25rem; translate: 0 0; }
   .edge-readout { top: 5.8rem; max-width: calc(100% - 2rem); text-align: center; }
   .admin-layout { display: block; }
   .admin-layout .graph-stage { min-height: 78dvh; padding: 0 0.6rem 0.6rem; }

@@ -4,6 +4,8 @@ test("public graph and contribution routes load", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "What does Europe depend on?" })).toBeVisible();
   await expect(page.getByLabel(/external dependencies revealed/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Network overview" })).toBeVisible();
+  await expect(page.getByText("Organizations mapped")).toBeVisible();
   await expect(page.getByText("Simulated, audience-submitted demo data")).toBeVisible();
   await page.goto("/contribute");
   await expect(page.getByRole("heading", { name: "Add your company." })).toBeVisible();
