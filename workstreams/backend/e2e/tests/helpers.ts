@@ -174,6 +174,8 @@ export function apiUrl(path: string): string {
 export const paths = {
   health: '/api/health',
   graph: (slug = SESSION_SLUG) => `/api/sessions/${slug}/graph`,
+  companyContributions: (slug = SESSION_SLUG) =>
+    `/api/sessions/${slug}/company-contributions`,
   dependencies: (slug = SESSION_SLUG) => `/api/sessions/${slug}/dependencies`,
   events: (slug = SESSION_SLUG) => `/api/sessions/${slug}/events`,
   adminLogin: '/api/admin/login',

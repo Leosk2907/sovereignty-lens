@@ -64,7 +64,7 @@ class FlywayMigrationIT extends AbstractDatabaseTest {
             "select version, description, success from flyway_schema_history"
                 + " where version is not null order by installed_rank");
 
-    assertThat(applied).extracting(row -> row.get("version")).containsExactly("1", "2", "3");
+    assertThat(applied).extracting(row -> row.get("version")).containsExactly("1", "2", "3", "4");
     assertThat(applied).allSatisfy(row -> assertThat(row.get("success")).isEqualTo(Boolean.TRUE));
   }
 

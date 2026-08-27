@@ -112,13 +112,17 @@ test.describe('presenter administration', () => {
       const anon = await newAnonymousContext();
       try {
         // Called defensively by the admin UI, so it must not fail unauthenticated.
-        expect((await anon.post(paths.adminLogout)).status()).toBe(204);
+        const anonymousLogout = await anon.post(paths.adminLogout);
+        expect(anonymousLogout.status()).toBe(200);
+        expect(await anonymousLogout.json()).toEqual({ contractVersion: 1, authenticated: false });
 
         const scopedCookie = await adminLogin(anon);
         expect(
           (await anon.get(paths.adminDependencies(), withAdmin(scopedCookie))).status(),
         ).toBe(200);
-        expect((await anon.post(paths.adminLogout, withAdmin(scopedCookie))).status()).toBe(204);
+        const authenticatedLogout = await anon.post(paths.adminLogout, withAdmin(scopedCookie));
+        expect(authenticatedLogout.status()).toBe(200);
+        expect(await authenticatedLogout.json()).toEqual({ contractVersion: 1, authenticated: false });
       } finally {
         await anon.dispose();
       }

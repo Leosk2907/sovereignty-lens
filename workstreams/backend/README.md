@@ -2,7 +2,7 @@
 
 A standalone Java 21 / Spring Boot 3.3.5 service that holds the whole state of
 the live demo: it serves the authoritative graph snapshot, accepts one audience
-dependency per phone per round, streams committed graph changes to the
+company profile per phone per round, streams committed graph changes to the
 presentation over Server-Sent Events, renders the QR code the audience scans,
 and exposes the presenter's recovery controls behind a shared password. It
 speaks plain PostgreSQL 16 and nothing else.
@@ -213,11 +213,13 @@ Swagger UI is at `/api/docs` and the generated OpenAPI document at
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | none | Liveness and version probe. |
 | `GET` | `/api/sessions/{slug}/graph` | none | The authoritative `GraphSnapshot`. |
-| `POST` | `/api/sessions/{slug}/dependencies` | none | Submit one audience dependency. |
+| `POST` | `/api/sessions/{slug}/company-contributions` | none | Atomically submit a company and all of its customer/provider connections. |
+| `POST` | `/api/sessions/{slug}/dependencies` | none | Legacy single-edge compatibility endpoint. |
 | `GET` | `/api/sessions/{slug}/events` | none | Server-Sent Events stream of committed graph events. |
 | `GET` | `/api/qr` | none | Render the contribution or presentation QR code as PNG or SVG. |
 | `POST` | `/api/admin/login` | none | Exchange the shared password for the admin cookie. |
-| `POST` | `/api/admin/logout` | none | Clear the admin cookie. Always `204`. |
+| `POST` | `/api/admin/logout` | none | Clear the admin cookie and return `authenticated: false`. |
+| `GET` | `/api/admin/session` | admin cookie | Verify the presenter session and return the demo session. |
 | `POST` | `/api/admin/sessions/{slug}/actions` | admin cookie | Pause, resume, undo, or reset. |
 | `GET` | `/api/admin/sessions/{slug}/dependencies` | admin cookie | Current-round audience dependencies, including hidden ones. |
 | `PATCH` | `/api/admin/dependencies/{id}` | admin cookie | Hide or restore one audience dependency. |
@@ -237,9 +239,9 @@ envelope with a fixed code-to-status mapping (`400`, `401`, `403`, `404`, `409`,
 3. An audience member scans the code and their phone opens
    `<APP_PUBLIC_BASE_URL>/contribute` — the frontend, not this service.
 4. The form calls this API to load the organization list and to `POST` the
-   contribution.
-5. On success the presentation receives a `dependency.created` event over SSE
-   and the node appears without a reload.
+   complete company contribution.
+5. On success the presentation receives one `dependency.created` event per
+   committed edge over SSE and the profile appears without a reload.
 
 The phone and the laptop must be on the same network. Guest Wi-Fi that isolates
 clients from each other will not work, however correct the URL is.
@@ -258,7 +260,7 @@ That combination is a firewall or client-isolation problem, never a wrong
 Migrations are in `src/main/resources/db/migration` and Flyway applies them at
 startup.
 
-Three application tables, defined in `V1__schema.sql`:
+Three core application tables are defined in `V1__schema.sql`:
 
 - `sessions` — one row per demo session. Holds `slug`, `status`
   (`open` / `paused`), `current_round`, and `root_organization_id`.
@@ -268,7 +270,10 @@ Three application tables, defined in `V1__schema.sql`:
   `null` round and stay visible in every round; audience rows belong to exactly
   one round and carry a `contributor_hash`.
 
-Plus one supporting table:
+`V4__company_profile_submission.sql` adds `contributions`, the one-per-browser,
+per-round parent row that groups every edge submitted by the form.
+
+Plus one event-log table:
 
 - `graph_events` — the durable, ordered log of every live event. It is what
   makes a contribution and its event atomic (both rows are written in one

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.sovereigntylens.domain.DomainException;
+import eu.sovereigntylens.domain.model.CompanyProfileResult;
+import eu.sovereigntylens.domain.model.CompanyProfileSubmission;
 import eu.sovereigntylens.domain.model.Dependency;
 import eu.sovereigntylens.domain.model.DependencyStatus;
 import eu.sovereigntylens.domain.model.DependencySubmission;
@@ -14,6 +16,7 @@ import eu.sovereigntylens.domain.model.SubmissionResult;
 import eu.sovereigntylens.domain.port.ContributionRepository;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.dao.DataAccessException;
@@ -41,6 +44,17 @@ public class JdbcContributionRepository implements ContributionRepository {
           :normalizedName,
           :type,
           :jurisdiction,
+          :contributorHash,
+          :capacity)
+      """;
+
+  private static final String SUBMIT_COMPANY_PROFILE =
+      """
+      select submit_company_profile(
+          :slug,
+          cast(:company as jsonb),
+          cast(:customers as jsonb),
+          cast(:dependencies as jsonb),
           :contributorHash,
           :capacity)
       """;
@@ -80,6 +94,57 @@ public class JdbcContributionRepository implements ContributionRepository {
     return parse(json);
   }
 
+  @Override
+  public CompanyProfileResult submitCompanyProfile(CompanyProfileSubmission submission) {
+    Map<String, Object> parameters = new HashMap<>();
+    parameters.put("slug", submission.sessionSlug());
+    parameters.put("company", organizationInputJson(submission.company()));
+    parameters.put(
+        "customers",
+        writeJson(submission.customerOrganizationIds().stream().map(Object::toString).toList()));
+    parameters.put(
+        "dependencies",
+        writeJson(
+            submission.dependencies().stream()
+                .map(this::organizationInputMap)
+                .toList()));
+    parameters.put("contributorHash", submission.contributorHash());
+    parameters.put("capacity", submission.roundCapacity());
+
+    String json;
+    try {
+      json = jdbc.queryForObject(SUBMIT_COMPANY_PROFILE, parameters, String.class);
+    } catch (DataAccessException e) {
+      Optional<DomainException> domainFailure = SqlStateErrors.translate(e);
+      if (domainFailure.isPresent()) {
+        throw domainFailure.get();
+      }
+      throw e;
+    }
+    return parseCompanyProfile(json);
+  }
+
+  private String organizationInputJson(CompanyProfileSubmission.OrganizationInput input) {
+    return writeJson(organizationInputMap(input));
+  }
+
+  private Map<String, String> organizationInputMap(
+      CompanyProfileSubmission.OrganizationInput input) {
+    return Map.of(
+        "name", input.displayName(),
+        "normalizedName", input.comparisonKey(),
+        "organizationType", input.organizationType().wireValue(),
+        "jurisdiction", input.jurisdiction().wireValue());
+  }
+
+  private String writeJson(Object value) {
+    try {
+      return objectMapper.writeValueAsString(value);
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException("Could not serialize a company-profile submission", e);
+    }
+  }
+
   /**
    * A failure here is a bug, not a rule violation, so it stays an unchecked exception: the handler
    * logs it with its stack trace and answers with a generic {@code INTERNAL_ERROR}. Nothing about
@@ -102,6 +167,36 @@ public class JdbcContributionRepository implements ContributionRepository {
       // and this mapper have drifted apart.
       throw new IllegalStateException("submit_dependency returned an unusable result", e);
     }
+  }
+
+  private CompanyProfileResult parseCompanyProfile(String json) {
+    if (json == null || json.isBlank()) {
+      throw new IllegalStateException("submit_company_profile returned no result");
+    }
+    try {
+      JsonNode root = objectMapper.readTree(json);
+      return new CompanyProfileResult(
+          root.path("round").asInt(),
+          organization(root.path("company")),
+          connections(root.path("customerConnections")),
+          connections(root.path("dependencyConnections")));
+    } catch (JsonProcessingException | RuntimeException e) {
+      throw new IllegalStateException("submit_company_profile returned an unusable result", e);
+    }
+  }
+
+  private static List<CompanyProfileResult.Connection> connections(JsonNode values) {
+    if (!values.isArray()) {
+      throw new IllegalStateException("submit_company_profile result is missing connections");
+    }
+    return java.util.stream.StreamSupport.stream(values.spliterator(), false)
+        .map(
+            value ->
+                new CompanyProfileResult.Connection(
+                    text(value, "eventId"),
+                    organization(value.path("node")),
+                    dependency(value.path("edge"))))
+        .toList();
   }
 
   private static Organization organization(JsonNode node) {

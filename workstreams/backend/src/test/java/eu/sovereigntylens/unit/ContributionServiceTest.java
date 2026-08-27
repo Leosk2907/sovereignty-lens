@@ -8,6 +8,8 @@ import eu.sovereigntylens.application.ContributorHasher;
 import eu.sovereigntylens.config.AppProperties;
 import eu.sovereigntylens.domain.DomainException;
 import eu.sovereigntylens.domain.model.ContributionCommand;
+import eu.sovereigntylens.domain.model.CompanyProfileResult;
+import eu.sovereigntylens.domain.model.CompanyProfileSubmission;
 import eu.sovereigntylens.domain.model.DependencySubmission;
 import eu.sovereigntylens.domain.model.DomainErrorCode;
 import eu.sovereigntylens.domain.model.Jurisdiction;
@@ -199,6 +201,11 @@ class ContributionServiceTest {
         throw failure;
       }
       return result;
+    }
+
+    @Override
+    public CompanyProfileResult submitCompanyProfile(CompanyProfileSubmission submission) {
+      throw new UnsupportedOperationException("Not used by the legacy contribution tests");
     }
   }
 }

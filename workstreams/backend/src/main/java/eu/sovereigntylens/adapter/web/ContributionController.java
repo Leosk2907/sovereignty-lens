@@ -2,10 +2,15 @@ package eu.sovereigntylens.adapter.web;
 
 import eu.sovereigntylens.application.ContributionService;
 import eu.sovereigntylens.contract.ApiErrorResponse;
+import eu.sovereigntylens.contract.CompanyContributionConnection;
+import eu.sovereigntylens.contract.CompanyContributionRequest;
+import eu.sovereigntylens.contract.CompanyContributionResult;
 import eu.sovereigntylens.contract.ContractVersion;
 import eu.sovereigntylens.contract.ContributionRequest;
 import eu.sovereigntylens.contract.ContributionResult;
 import eu.sovereigntylens.domain.DomainException;
+import eu.sovereigntylens.domain.model.CompanyContributionCommand;
+import eu.sovereigntylens.domain.model.CompanyProfileResult;
 import eu.sovereigntylens.domain.model.ContributionCommand;
 import eu.sovereigntylens.domain.model.SubmissionResult;
 import eu.sovereigntylens.mapper.GraphMapper;
@@ -41,6 +46,28 @@ public class ContributionController {
 
   public ContributionController(ContributionService contributions) {
     this.contributions = contributions;
+  }
+
+  /** Accepts the canonical company-profile batch used by the audience form. */
+  @PostMapping(
+      path = "/api/sessions/{slug}/company-contributions",
+      consumes = MediaType.APPLICATION_JSON_VALUE,
+      produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<CompanyContributionResult> contributeCompanyProfile(
+      @PathVariable String slug, @Valid @RequestBody CompanyContributionRequest request) {
+    requireCurrentContractVersion(request.contractVersion());
+    CompanyProfileResult result = contributions.contributeCompanyProfile(toCommand(slug, request));
+    return ResponseEntity.status(HttpStatus.CREATED)
+        .body(
+            CompanyContributionResult.of(
+                result.round(),
+                GraphMapper.toContract(result.company()),
+                result.customerConnections().stream()
+                    .map(ContributionController::toContract)
+                    .toList(),
+                result.dependencyConnections().stream()
+                    .map(ContributionController::toContract)
+                    .toList()));
   }
 
   @Operation(
@@ -110,6 +137,35 @@ public class ContributionController {
         target.name(),
         GraphMapper.toDomain(target.organizationType()),
         GraphMapper.toDomain(target.jurisdiction()));
+  }
+
+  private static CompanyContributionCommand toCommand(
+      String slug, CompanyContributionRequest request) {
+    CompanyContributionRequest.Company company = request.company();
+    return new CompanyContributionCommand(
+        slug,
+        request.anonymousClientId(),
+        new CompanyContributionCommand.Company(
+            company.name(),
+            GraphMapper.toDomain(company.organizationType()),
+            GraphMapper.toDomain(company.jurisdiction())),
+        request.customerOrganizationIds(),
+        request.dependencies().stream()
+            .map(
+                dependency ->
+                    new CompanyContributionCommand.Provider(
+                        dependency.name(),
+                        GraphMapper.toDomain(dependency.organizationType()),
+                        GraphMapper.toDomain(dependency.jurisdiction())))
+            .toList());
+  }
+
+  private static CompanyContributionConnection toContract(
+      CompanyProfileResult.Connection connection) {
+    return new CompanyContributionConnection(
+        connection.eventId(),
+        GraphMapper.toContract(connection.node()),
+        GraphMapper.toContract(connection.edge()));
   }
 
   /**

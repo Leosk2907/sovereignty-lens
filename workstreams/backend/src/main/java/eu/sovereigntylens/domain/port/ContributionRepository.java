@@ -1,6 +1,8 @@
 package eu.sovereigntylens.domain.port;
 
 import eu.sovereigntylens.domain.DomainException;
+import eu.sovereigntylens.domain.model.CompanyProfileResult;
+import eu.sovereigntylens.domain.model.CompanyProfileSubmission;
 import eu.sovereigntylens.domain.model.DependencySubmission;
 import eu.sovereigntylens.domain.model.SubmissionResult;
 
@@ -23,4 +25,7 @@ public interface ContributionRepository {
    *     {@code VALIDATION_ERROR}
    */
   SubmissionResult submit(DependencySubmission submission);
+
+  /** Persists a complete company profile and emits one event for every created edge. */
+  CompanyProfileResult submitCompanyProfile(CompanyProfileSubmission submission);
 }

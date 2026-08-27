@@ -125,10 +125,71 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/sessions/{slug}/company-contributions:
+    post:
+      tags: [Public]
+      operationId: createCompanyContribution
+      summary: Submit one European company profile
+      description: |
+        Atomically creates one European company, one to three incoming customer
+        connections, and one to three outgoing provider connections. The browser
+        may submit one profile per round. Every committed edge produces its own
+        durable `dependency.created` event; a failed profile produces no rows and
+        no events.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SessionSlug'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyContributionRequest'
+      responses:
+        '201':
+          description: The complete profile was committed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyContributionResult'
+        '400':
+          description: '`VALIDATION_ERROR` — invalid profile, identifier, count, or organization type.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '404':
+          description: '`SESSION_NOT_FOUND` or `SOURCE_NOT_FOUND`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: '`DUPLICATE_DEPENDENCY` or `ALREADY_CONTRIBUTED`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '423':
+          description: '`SESSION_PAUSED` — the presenter paused contributions.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '429':
+          description: '`ROUND_CAPACITY_REACHED` — the profile would exceed the round capacity.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/sessions/{slug}/dependencies:
     post:
       tags: [Public]
       operationId: createDependency
+      deprecated: true
       summary: Submit one audience dependency
       description: |
         Accepts one audience contribution: the selected source organization gains one
@@ -447,14 +508,34 @@ paths:
         UI.
       security: []
       responses:
-        '204':
-          description: The session cookie was cleared. No response body.
+        '200':
+          description: The session cookie was cleared.
           headers:
             Set-Cookie:
               description: Expired `sl_admin` cookie.
               schema:
                 type: string
                 example: sl_admin=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLogoutResult'
+
+  /api/admin/session:
+    get:
+      tags: [Admin]
+      operationId: getAdminSession
+      summary: Verify the presenter session
+      description: Returns the current demo session when the signed admin cookie is valid.
+      responses:
+        '200':
+          description: The presenter is authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSessionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/admin/sessions/{slug}/actions:
     post:
@@ -1056,6 +1137,95 @@ components:
           status: active
           createdAt: '2026-08-27T10:15:30Z'
 
+    CompanyContributionRequest:
+      type: object
+      description: One atomic company-profile contribution. Unknown fields are rejected.
+      additionalProperties: false
+      required: [contractVersion, anonymousClientId, company, customerOrganizationIds, dependencies]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        anonymousClientId:
+          type: string
+          format: uuid
+        company:
+          type: object
+          additionalProperties: false
+          required: [name, organizationType, jurisdiction]
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 60
+            organizationType:
+              $ref: '#/components/schemas/ContributionTargetType'
+            jurisdiction:
+              type: string
+              enum: [europe]
+        customerOrganizationIds:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        dependencies:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, organizationType, jurisdiction]
+            properties:
+              name:
+                type: string
+                minLength: 2
+                maxLength: 60
+              organizationType:
+                $ref: '#/components/schemas/ContributionTargetType'
+              jurisdiction:
+                $ref: '#/components/schemas/Jurisdiction'
+
+    CompanyContributionConnection:
+      type: object
+      additionalProperties: false
+      required: [eventId, node, edge]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        node:
+          $ref: '#/components/schemas/GraphNode'
+        edge:
+          $ref: '#/components/schemas/GraphEdge'
+
+    CompanyContributionResult:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, round, company, customerConnections, dependencyConnections]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        round:
+          type: integer
+          minimum: 1
+        company:
+          $ref: '#/components/schemas/GraphNode'
+        customerConnections:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/CompanyContributionConnection'
+        dependencyConnections:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/CompanyContributionConnection'
+
     DependencyCreatedEvent:
       type: object
       description: |
@@ -1179,6 +1349,30 @@ components:
       example:
         contractVersion: 1
         authenticated: true
+
+    AdminSessionResult:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, authenticated, session]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        authenticated:
+          type: boolean
+          enum: [true]
+        session:
+          $ref: '#/components/schemas/SessionSummary'
+
+    AdminLogoutResult:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, authenticated]
+      properties:
+        contractVersion:
+          $ref: '#/components/schemas/ContractVersion'
+        authenticated:
+          type: boolean
+          enum: [false]
 
     AdminActionRequest:
       type: object

@@ -37,15 +37,20 @@ public final class Normalizer {
    * @throws DomainException with {@code VALIDATION_ERROR} when the result is not 2-60 code points
    */
   public static String displayName(String raw) {
+    return displayName(raw, "target.name");
+  }
+
+  /** Produces a display name while attributing validation errors to the caller's wire field. */
+  public static String displayName(String raw, String field) {
     if (raw == null) {
-      throw DomainException.validation("Company name is required.", "target.name");
+      throw DomainException.validation("Company name is required.", field);
     }
     String cleaned = collapse(java.text.Normalizer.normalize(raw, Form.NFC));
     int length = cleaned.codePointCount(0, cleaned.length());
     if (length < MIN_LENGTH || length > MAX_LENGTH) {
       throw DomainException.validation(
           "Company name must be between " + MIN_LENGTH + " and " + MAX_LENGTH + " characters.",
-          "target.name");
+          field);
     }
     return cleaned;
   }

@@ -39,6 +39,12 @@ public class AdminService {
     return admin.pause(sessionSlug);
   }
 
+  /** Returns the authoritative session shown by the presenter shell. */
+  @Transactional(readOnly = true)
+  public Session session(String sessionSlug) {
+    return sessions.requireBySlug(sessionSlug);
+  }
+
   /** Reopens the session. */
   public AdminOutcome resume(String sessionSlug) {
     return admin.resume(sessionSlug);

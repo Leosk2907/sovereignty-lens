@@ -8,6 +8,8 @@ import eu.sovereigntylens.contract.AdminActionResult;
 import eu.sovereigntylens.contract.AdminDependencyList;
 import eu.sovereigntylens.contract.AdminLoginRequest;
 import eu.sovereigntylens.contract.AdminLoginResult;
+import eu.sovereigntylens.contract.AdminLogoutResult;
+import eu.sovereigntylens.contract.AdminSessionResult;
 import eu.sovereigntylens.contract.ApiErrorResponse;
 import eu.sovereigntylens.contract.ContractVersion;
 import eu.sovereigntylens.contract.DependencyStatusRequest;
@@ -105,12 +107,18 @@ public class AdminController {
   @Operation(
       summary = "Log out",
       description = "Clears the session cookie. Succeeds whether or not a session was present.")
-  @ApiResponse(responseCode = "204", description = "The session cookie is cleared.")
+  @ApiResponse(responseCode = "200", description = "The session cookie is cleared.")
   @PostMapping("/logout")
-  public ResponseEntity<Void> logout() {
-    return ResponseEntity.noContent()
+  public ResponseEntity<AdminLogoutResult> logout() {
+    return ResponseEntity.ok()
         .header(HttpHeaders.SET_COOKIE, sessionCookie.expiredCookie().toString())
-        .build();
+        .body(AdminLogoutResult.loggedOut());
+  }
+
+  /** Verifies the presenter cookie and returns the current demo session. */
+  @GetMapping("/session")
+  public AdminSessionResult session() {
+    return AdminSessionResult.authenticated(GraphMapper.toContract(adminService.session("demo")));
   }
 
   @Operation(
