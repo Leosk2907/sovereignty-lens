@@ -97,6 +97,15 @@ begin
         raise exception 'target organization type may not be government' using errcode = 'SL007';
     end if;
 
+    -- Checked here rather than trusted from the caller. The duplicate-contributor
+    -- test below compares with `=`, which is never true for a null, and the
+    -- unique index is filtered on a non-null hash: a null would therefore submit
+    -- without limit. This function is documented as the layer that enforces the
+    -- one-submission-per-browser rule, so it has to hold on its own.
+    if p_contributor_hash is null or length(btrim(p_contributor_hash)) = 0 then
+        raise exception 'a contributor hash is required' using errcode = 'SL007';
+    end if;
+
     if exists (select 1
                from dependencies
                where session_id = v_session.id

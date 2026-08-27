@@ -56,9 +56,13 @@ create table dependencies (
     created_at             timestamptz not null default now(),
     constraint dependencies_no_self_reference_check
         check (source_organization_id <> target_organization_id),
+    -- An audience row must carry a contributor hash. The once-per-round unique
+    -- index below is filtered on `contributor_hash is not null`, so a null hash
+    -- would silently escape the one-submission-per-browser rule entirely.
     constraint dependencies_seed_shape_check
         check ((is_seed and round is null and contributor_hash is null)
-            or (not is_seed and round is not null and round > 0))
+            or (not is_seed and round is not null and round > 0
+                and contributor_hash is not null))
 );
 
 -- One source/target edge is active at most once per session and round. Seed rows

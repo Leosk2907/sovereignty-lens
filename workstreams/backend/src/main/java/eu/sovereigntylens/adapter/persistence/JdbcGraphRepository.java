@@ -30,6 +30,15 @@ public class JdbcGraphRepository implements GraphRepository {
    * belong to exactly one round and are visible only while that round is current. Hidden rows drop
    * out in both cases, which is what makes an admin "hide" take effect on the next read.
    */
+  /**
+   * Joins the predicate onto the queries below.
+   *
+   * <p>A text block that ends immediately after {@code where} contributes no trailing newline, so
+   * concatenating directly produced {@code wheresession_id} and every graph read failed with a
+   * syntax error. The separator is explicit rather than implied by the source layout.
+   */
+  private static final String NEWLINE = "\n";
+
   private static final String VISIBLE_EDGES_PREDICATE =
       """
       session_id = cast(:sessionId as uuid)
@@ -47,6 +56,7 @@ public class JdbcGraphRepository implements GraphRepository {
              created_at
       from dependencies
       where """
+          + NEWLINE
           + VISIBLE_EDGES_PREDICATE
           + """
       order by created_at, id
@@ -63,6 +73,7 @@ public class JdbcGraphRepository implements GraphRepository {
           select source_organization_id, target_organization_id
           from dependencies
           where """
+          + NEWLINE
           + VISIBLE_EDGES_PREDICATE
           + """
       )

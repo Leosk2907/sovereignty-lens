@@ -47,14 +47,14 @@ class FlywayMigrationIT extends AbstractDatabaseTest {
   static void migrateAnEmptyDatabase() throws Exception {
     createEmptyDatabase();
     Flyway.configure()
-        .dataSource(probeUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+        .dataSource(probeUrl(), username(), password())
         .locations("classpath:db/migration")
         .load()
         .migrate();
     probe =
         new JdbcTemplate(
             new DriverManagerDataSource(
-                probeUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+                probeUrl(), username(), password()));
   }
 
   @Test
@@ -188,9 +188,9 @@ class FlywayMigrationIT extends AbstractDatabaseTest {
     // against the container's default database rather than the application's DataSource.
     try (Connection admin =
             DriverManager.getConnection(
-                databaseUrl(POSTGRES.getDatabaseName()),
-                POSTGRES.getUsername(),
-                POSTGRES.getPassword());
+                jdbcUrl(),
+                username(),
+                password());
         Statement statement = admin.createStatement()) {
       statement.execute("drop database if exists " + PROBE_DATABASE);
       statement.execute("create database " + PROBE_DATABASE);
@@ -201,12 +201,15 @@ class FlywayMigrationIT extends AbstractDatabaseTest {
     return databaseUrl(PROBE_DATABASE);
   }
 
+  /**
+   * Swaps the database name in whichever JDBC URL the suite is running against, so this works
+   * unchanged whether that is a Testcontainers instance or an externally supplied server.
+   */
   private static String databaseUrl(String databaseName) {
-    return "jdbc:postgresql://"
-        + POSTGRES.getHost()
-        + ":"
-        + POSTGRES.getFirstMappedPort()
-        + "/"
-        + databaseName;
+    String url = jdbcUrl();
+    int lastSlash = url.lastIndexOf('/');
+    int query = url.indexOf('?', lastSlash);
+    String suffix = query < 0 ? "" : url.substring(query);
+    return url.substring(0, lastSlash + 1) + databaseName + suffix;
   }
 }

@@ -36,9 +36,26 @@ public abstract class AbstractDatabaseTest {
           .withUsername("sovereignty_test")
           .withPassword("sovereignty_test");
 
+  /**
+   * An already-running PostgreSQL to use instead of starting a container.
+   *
+   * <p>Testcontainers needs to talk to a Docker daemon itself, which is not always possible - some
+   * Docker Desktop builds refuse the engine API to non-CLI clients, and CI images without
+   * Docker-in-Docker cannot do it at all. Pointing these three variables at a database that is
+   * already up runs the identical suite against identical SQL. The account must be able to create a
+   * database, because {@code FlywayMigrationIT} makes its own empty one.
+   */
+  private static final String EXTERNAL_URL = System.getenv("SOVEREIGNTY_TEST_DB_URL");
+
+  private static final String EXTERNAL_USERNAME = System.getenv("SOVEREIGNTY_TEST_DB_USERNAME");
+
+  private static final String EXTERNAL_PASSWORD = System.getenv("SOVEREIGNTY_TEST_DB_PASSWORD");
+
   static {
-    // Started here and never stopped: Ryuk removes it when the JVM exits.
-    POSTGRES.start();
+    if (EXTERNAL_URL == null) {
+      // Started here and never stopped: Ryuk removes it when the JVM exits.
+      POSTGRES.start();
+    }
   }
 
   @Autowired protected NamedParameterJdbcTemplate jdbc;
@@ -65,8 +82,27 @@ public abstract class AbstractDatabaseTest {
 
   @DynamicPropertySource
   static void datasourceProperties(DynamicPropertyRegistry registry) {
+    if (EXTERNAL_URL != null) {
+      registry.add("spring.datasource.url", () -> EXTERNAL_URL);
+      registry.add("spring.datasource.username", () -> EXTERNAL_USERNAME);
+      registry.add("spring.datasource.password", () -> EXTERNAL_PASSWORD);
+      return;
+    }
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
     registry.add("spring.datasource.username", POSTGRES::getUsername);
     registry.add("spring.datasource.password", POSTGRES::getPassword);
+  }
+
+  /** JDBC coordinates of whichever database the suite is running against. */
+  public static String jdbcUrl() {
+    return EXTERNAL_URL != null ? EXTERNAL_URL : POSTGRES.getJdbcUrl();
+  }
+
+  public static String username() {
+    return EXTERNAL_URL != null ? EXTERNAL_USERNAME : POSTGRES.getUsername();
+  }
+
+  public static String password() {
+    return EXTERNAL_URL != null ? EXTERNAL_PASSWORD : POSTGRES.getPassword();
   }
 }

@@ -79,11 +79,23 @@ class GraphEventDeliveryIT extends AbstractDatabaseTest {
     session = fixtures.seededSession();
   }
 
+  /**
+   * Closing the client is not enough to make the next test's baseline meaningful.
+   *
+   * <p>The server only discovers a gone subscriber when its next write fails, which is at most one
+   * heartbeat away. Without waiting, the following test reads a count that still includes this
+   * stream, then watches it drop as its own registers, and never sees the count rise above the
+   * baseline it captured.
+   */
   @AfterEach
   void closeStream() {
     if (stream != null) {
       stream.close();
       stream = null;
+      Awaitility.await()
+          .atMost(DELIVERY_TIMEOUT)
+          .pollInterval(Duration.ofMillis(25))
+          .until(() -> broadcaster.subscriberCount() == 0);
     }
   }
 
