@@ -23,6 +23,27 @@ ready.
 
 Do not implement the audience, Cytoscape, or admin page UI.
 
+## Data contract obligations
+
+[`../../contracts/data-contract.md`](../../contracts/data-contract.md) is
+authoritative. This workstream owns the shared TypeScript/Zod implementation but
+may not change its semantics without a coordinated contract update.
+
+- Accept `ContributionRequest`, `AdminLoginRequest`, `AdminActionRequest`, and
+  `DependencyStatusRequest` exactly as versioned and strict schemas.
+- Return `GraphSnapshot`, `ContributionResult`, `AdminLoginResult`,
+  `AdminActionResult`, `AdminDependencyList`, `DependencyStatusResult`, or
+  `ApiErrorResponse` with the documented status mapping.
+- Emit only `DependencyCreatedEvent` and `GraphInvalidatedEvent` on the canonical
+  session/round topic.
+- Serialize public JSON as camelCase and map it explicitly from snake_case
+  database rows.
+- Never expose normalized names, contributor hashes, internal round markers,
+  secrets, or other database-only fields.
+- Preserve the invariant that an edge means `source depends on target`.
+- Provide versioned fixtures for every request, response, error, and event so
+  other owners can develop without a live backend.
+
 ## Ordered tasks
 
 1. Scaffold the Next.js TypeScript application with App Router, Tailwind,
@@ -30,7 +51,8 @@ Do not implement the audience, Cytoscape, or admin page UI.
 2. Add scripts for `dev`, `build`, `lint`, `typecheck`, `test`, `test:e2e`, and
    Supabase local lifecycle/migration commands.
 3. Commit `.env.example` and a fail-fast server environment parser.
-4. Implement the exact shared contracts from the root plan with Zod schemas.
+4. Implement the exact canonical data contract with strict Zod schemas and
+   exported TypeScript types in one shared module.
 5. Add deterministic fixture builders for one seeded graph and API errors.
 6. Initialize Supabase and create the three tables, constraints, indexes,
    timestamp behavior, RLS policies, and Realtime Broadcast configuration.
@@ -70,6 +92,8 @@ participation.
 - Migrations create a complete empty environment without dashboard-only steps.
 - Reapplying migrations is safe.
 - Fixtures conform to the same Zod schemas used by production handlers.
+- Contract tests prove database rows, SQL results, API bodies, and Broadcast
+  payloads map to the canonical version `1` shapes.
 - Every endpoint returns a consistent JSON success/error envelope.
 - Submission is atomic under concurrent requests.
 - A committed submission produces exactly one versioned Broadcast event with

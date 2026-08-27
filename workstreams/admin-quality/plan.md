@@ -19,14 +19,33 @@ end-to-end coverage, accessibility pass, and a repeatable demo rehearsal.
 Do not change database, route contracts, graph algorithms, or audience form
 logic. File contract issues with the integration owner instead.
 
+## Data contract obligations
+
+[`../../contracts/data-contract.md`](../../contracts/data-contract.md) is
+authoritative. This workstream produces admin request shapes and consumes admin
+results, dependency lists, graph snapshots, and structured API errors.
+
+- Import shared types and Zod schemas; do not define local admin payload types.
+- Send `AdminLoginRequest`, `AdminActionRequest`, and
+  `DependencyStatusRequest` with `contractVersion: 1`.
+- Render `AdminDependencyList` newest first and identify entries by `edge.id`.
+- Use `SessionSummary.status` and `.currentRound` as authoritative presenter
+  state.
+- Map failures from `ApiErrorResponse.error.code`; never branch on message text.
+- Treat returned event IDs as operation identifiers for deduplication and status
+  feedback.
+- Preserve canonical node/edge IDs and direction in admin labels and test
+  assertions.
+- Reject unsupported versions and show a non-destructive refresh/retry state.
+
 ## Ordered tasks
 
 1. Build a password login page without exposing configuration details in errors.
 2. Build an authenticated control page showing session status, round, active
    submission count, and connection health.
 3. Implement pause/resume with immediate visible state.
-4. List current-round audience dependencies newest first and implement
-   hide/restore.
+4. Load `GET /api/admin/sessions/demo/dependencies`, list current-round audience
+   dependencies newest first, and implement hide/restore.
 5. Implement undo latest and make a no-op state clear when nothing is available.
 6. Implement reset with an explicit confirmation describing that seed data stays
    and audience data from the old round disappears from the public graph.
@@ -56,6 +75,8 @@ logic. File contract issues with the integration owner instead.
 
 - Invalid login does not reveal secret or implementation details.
 - All state-changing controls prevent repeat clicks and report success/failure.
+- All admin requests, success responses, lists, and error fixtures parse through
+  the canonical version `1` schemas.
 - Reset requires confirmation; hide/restore and pause/resume do not.
 - Presenter actions update the presentation without a manual refresh.
 - The about page clearly distinguishes prototype demonstration from factual
@@ -72,4 +93,3 @@ logic. File contract issues with the integration owner instead.
 
 Provide Playwright output, accessibility results, final README/runbook changes,
 rehearsal results, known limitations, and commit SHA to the integration owner.
-

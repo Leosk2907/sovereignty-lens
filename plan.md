@@ -152,103 +152,21 @@ read-only access needed for graph loading and Realtime; they never write tables
 directly. Vercel handlers do not hold presentation WebSocket connections;
 Supabase is the shared live-delivery layer across function instances.
 
-## Shared domain contracts
+## Shared data contract
 
-```ts
-type Jurisdiction =
-  | "europe"
-  | "united_states"
-  | "china"
-  | "other_external"
-  | "unknown";
+[`contracts/data-contract.md`](contracts/data-contract.md) is the sole source of
+truth for database-to-JSON mapping, enums, graph entities, requests, responses,
+errors, admin records, and Realtime events. All payloads use contract version
+`1`, camelCase HTTP/Realtime JSON, UUID identifiers, and UTC RFC 3339 timestamps.
 
-type OrganizationType =
-  | "government"
-  | "cloud"
-  | "software"
-  | "hardware"
-  | "telecom"
-  | "consulting"
-  | "logistics"
-  | "finance"
-  | "other";
+The implementation must provide the contract's TypeScript types and strict Zod
+schemas from one shared module. Server and client code import that module and do
+not redefine wire shapes. Contract tests parse SQL-function results, API
+responses, fixtures, and Broadcast events with those same schemas.
 
-type SessionStatus = "open" | "paused";
-type DependencyStatus = "active" | "hidden";
-
-interface GraphNode {
-  id: string;
-  name: string;
-  organizationType: OrganizationType;
-  jurisdiction: Jurisdiction;
-  isSeed: boolean;
-}
-
-interface GraphEdge {
-  id: string;
-  sourceOrganizationId: string;
-  targetOrganizationId: string;
-  isSeed: boolean;
-  status: DependencyStatus;
-  createdAt: string;
-}
-
-interface GraphSnapshot {
-  session: {
-    id: string;
-    slug: string;
-    title: string;
-    status: SessionStatus;
-    currentRound: number;
-    rootOrganizationId: string;
-  };
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  serverTime: string;
-}
-
-interface DependencyCreatedEvent {
-  version: 1;
-  event: "dependency.created";
-  eventId: string;
-  sessionSlug: "demo";
-  round: number;
-  node: GraphNode;
-  edge: GraphEdge;
-  occurredAt: string;
-}
-
-type GraphEvent =
-  | DependencyCreatedEvent
-  | {
-      version: 1;
-      event: "graph.invalidated";
-      eventId: string;
-      sessionSlug: "demo";
-      round: number;
-      reason: "pause" | "resume" | "hide" | "restore" | "undo" | "reset";
-      occurredAt: string;
-    };
-
-interface ContributionRequest {
-  anonymousClientId: string;
-  sourceOrganizationId: string;
-  target: {
-    name: string;
-    organizationType: Exclude<OrganizationType, "government">;
-    jurisdiction: Jurisdiction;
-  };
-}
-
-type AdminAction =
-  | { type: "pause" }
-  | { type: "resume" }
-  | { type: "reset" }
-  | { type: "undo" };
-```
-
-All server and client implementations import these types and their Zod schemas
-from one shared module. Do not independently redefine wire shapes.
+Every workstream plan contains an explicit contract-obligations section. A
+breaking field, enum, direction, or meaning change requires updating the
+canonical contract first and coordinating all workstreams.
 
 ## Database model
 
@@ -308,6 +226,10 @@ incident to those dependencies are omitted.
 
 ## HTTP API
 
+All request, success, and error bodies conform to contract version `1` in the
+canonical data contract. API JSON is camelCase even though PostgreSQL is
+snake_case.
+
 ### `GET /api/sessions/demo/graph`
 
 Returns `GraphSnapshot`. It is the authoritative graph read used at initial
@@ -338,6 +260,11 @@ without revealing which check failed.
 Accepts `AdminAction`. Requires the admin cookie. Pause/resume update session
 status, undo hides the latest active audience dependency, and reset increments
 the round and reopens the session.
+
+### `GET /api/admin/sessions/demo/dependencies`
+
+Requires the admin cookie and returns `AdminDependencyList`: all current-round,
+non-seed dependencies including hidden entries, newest first.
 
 ### `PATCH /api/admin/dependencies/:id`
 

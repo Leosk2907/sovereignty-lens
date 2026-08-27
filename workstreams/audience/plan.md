@@ -19,6 +19,24 @@ add exactly one understandable dependency and receive clear confirmation.
 Do not change database, endpoint, shared-contract, graph, or admin behavior.
 Develop against the committed fixtures until the preview API is ready.
 
+## Data contract obligations
+
+[`../../contracts/data-contract.md`](../../contracts/data-contract.md) is
+authoritative. This workstream consumes `GraphSnapshot` for the source selector,
+produces `ContributionRequest`, and handles `ContributionResult` or
+`ApiErrorResponse`.
+
+- Import shared types and Zod schemas; do not declare local payload interfaces.
+- Send `contractVersion: 1`, a UUID `anonymousClientId`, the selected canonical
+  source ID, and the strict target object.
+- Treat returned node, edge, round, and event IDs as canonical persisted data.
+- Map behavior from `error.code`, not from human-readable `error.message`.
+- Keep `anonymousClientId` client-side; it must never appear in graph or
+  Realtime payloads.
+- Display the edge direction as `selected source depends on new target`.
+- Reject an unsupported response contract version and show the generic
+  unavailable/retry state.
+
 ## Ordered tasks
 
 1. Build the mobile-first page with a short explanation and visible simulated
@@ -31,7 +49,7 @@ Develop against the committed fixtures until the preview API is ready.
    Always show Europe; show external/unknown choices only for the enabled
    variant. Avoid server/client hydration differences.
 5. Implement fields for source, target company name, organization type, and
-   jurisdiction with shared Zod validation.
+   jurisdiction with the canonical shared Zod validation.
 6. Prevent double-click submission and keep entered data for recoverable network
    errors.
 7. Map API statuses to concise states: invalid, duplicate, already contributed,
@@ -61,6 +79,8 @@ Develop against the committed fixtures until the preview API is ready.
 - Company names over 60 characters and self-dependencies are blocked locally.
 - API validation remains authoritative; client validation never invents a
   different rule.
+- Submitted and parsed fixtures conform to contract version `1` without local
+  adapters or alternate enum spellings.
 - Reloading may reroll visible jurisdictions but cannot bypass a successful
   contribution in the current round.
 - Paused and already-contributed users receive a stable explanatory screen.
@@ -71,4 +91,3 @@ Develop against the committed fixtures until the preview API is ready.
 
 Provide screenshots at 320px and 430px, tested device/browser notes, test output,
 known limitations, and commit SHA to the integration owner.
-

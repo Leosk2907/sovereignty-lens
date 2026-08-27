@@ -21,6 +21,23 @@ clear metrics, and a dramatic but truthful hidden-dependency reveal.
 Do not change database, endpoints, shared wire contracts, or admin pages.
 Develop from committed graph fixtures until the preview API is available.
 
+## Data contract obligations
+
+[`../../contracts/data-contract.md`](../../contracts/data-contract.md) is
+authoritative. This workstream consumes `GraphSnapshot` from HTTP and
+`GraphEvent` from Broadcast.
+
+- Import the shared types and Zod schemas; do not recreate graph or event types.
+- Accept only contract version `1` and the current `sessionSlug`/`round`.
+- Apply `DependencyCreatedEvent.node` and `.edge` by canonical IDs, never array
+  position or company name.
+- Treat `GraphInvalidatedEvent` as a refetch instruction, not a graph mutation.
+- Preserve `source depends on target` when mapping arrow direction.
+- Use only contract enum values for colors and external-exposure rules.
+- Never display hidden dependencies, database-only fields, or raw unvalidated
+  Broadcast payloads.
+- On any contract mismatch, keep the last good graph and fetch `GraphSnapshot`.
+
 ## Ordered tasks
 
 1. Implement pure breadth-first graph analysis that returns reachable IDs,
@@ -69,6 +86,8 @@ Develop from committed graph fixtures until the preview API is available.
 
 - The seeded graph renders without layout overlap that hides labels.
 - One database change appears without a manual refresh.
+- Every HTTP snapshot and Broadcast fixture parses through the canonical shared
+  schema before it reaches graph state.
 - Realtime reconnection and polling fallback do not create duplicate nodes.
 - A valid committed Broadcast updates the graph before snapshot reconciliation,
   and the snapshot creates no visual duplicate or second reveal.
