@@ -272,7 +272,10 @@ class ApiEndpointIT extends AbstractDatabaseTest {
         rest.exchange(
             "/api/admin/logout", HttpMethod.POST, new HttpEntity<>(null, withCookie), String.class);
 
-    assertThat(logout.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    assertThat(logout.getStatusCode()).isEqualTo(HttpStatus.OK);
+    JsonNode logoutBody = objectMapper.readTree(logout.getBody());
+    assertThat(logoutBody.path("contractVersion").asInt()).isEqualTo(1);
+    assertThat(logoutBody.path("authenticated").asBoolean()).isFalse();
     assertThat(sessionCookie(logout)).isEqualTo(AdminSessionCookie.NAME + "=");
 
     // The cleared cookie is the one the browser will send next; it must not authenticate anything.
