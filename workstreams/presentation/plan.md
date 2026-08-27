@@ -12,7 +12,8 @@ clear metrics, and a dramatic but truthful hidden-dependency reveal.
 - `/present` route and presentation components
 - Cytoscape initialization, styling, layout, and lifecycle
 - Pure graph analysis utilities
-- Supabase Realtime invalidation subscription and polling fallback
+- Supabase Realtime Broadcast subscription, immediate event application,
+  snapshot reconciliation, and polling fallback
 - QR code and participation prompt
 - Latest-submission toast, metrics, reveal banner, and connection status
 - Presentation-focused tests
@@ -33,18 +34,23 @@ Develop from committed graph fixtures until the preview API is available.
 5. Use a root-oriented breadth-first layout and rerun it with bounded animation
    after topology changes. Preserve user zoom when practical.
 6. Implement jurisdiction styles and arrow direction exactly as specified.
-7. Load the authoritative snapshot on mount.
-8. Subscribe to filtered Supabase changes. Debounce events and refetch the full
-   snapshot rather than mutating graph state directly from database payloads.
-9. Detect subscription failure, show degraded status, poll every three seconds,
+7. Load the authoritative snapshot on mount and subscribe to
+   `sovereignty:demo:round:<round>` Broadcast events.
+8. Validate every versioned `GraphEvent`. Apply `dependency.created` node/edge
+   payloads to local graph state immediately and idempotently, then schedule a
+   debounced authoritative snapshot reconciliation. Refetch immediately for
+   `graph.invalidated`, malformed, or wrong-round events.
+9. Keep a bounded processed-event-ID set so reconnect or replay behavior cannot
+   duplicate nodes, edges, toasts, or reveal animations.
+10. Detect subscription failure, show degraded status, poll every three seconds,
    and stop polling after Realtime recovers.
-10. Compare consecutive snapshots to identify the newest dependency and newly
+11. Compare consecutive committed states to identify the newest dependency and newly
     reachable external organizations.
-11. Animate the shortest newly exposed path, show a reveal banner, and avoid
+12. Animate the shortest newly exposed path, show a reveal banner, and avoid
     replaying the same reveal after unrelated refetches.
-12. Add metrics, latest-submission toast, permanent disclaimer, QR code, and
+13. Add metrics, latest-submission toast, permanent disclaimer, QR code, and
     short instruction.
-13. Tune readability at 1920x1080 and a laptop fallback size.
+14. Tune readability at 1920x1080 and a laptop fallback size.
 
 ## Visualization rules
 
@@ -64,6 +70,9 @@ Develop from committed graph fixtures until the preview API is available.
 - The seeded graph renders without layout overlap that hides labels.
 - One database change appears without a manual refresh.
 - Realtime reconnection and polling fallback do not create duplicate nodes.
+- A valid committed Broadcast updates the graph before snapshot reconciliation,
+  and the snapshot creates no visual duplicate or second reveal.
+- A malformed or fabricated Broadcast cannot remain after reconciliation.
 - A reachable US/China/other-external node highlights a correct shortest path.
 - Europe and unknown do not create a reveal banner.
 - Cycles never freeze rendering or analysis.
@@ -79,4 +88,3 @@ Develop from committed graph fixtures until the preview API is available.
 Provide a screen recording of an external reveal, 1920x1080 screenshot, fixture
 performance notes, test output, known limitations, and commit SHA to the
 integration owner.
-

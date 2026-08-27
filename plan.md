@@ -138,7 +138,7 @@ never present it as a factual allegation.
 - Next.js App Router, TypeScript, React, and Tailwind CSS
 - Vercel for application hosting and preview deployments
 - Supabase PostgreSQL for durable state
-- Supabase Realtime for graph invalidation events
+- Supabase Realtime Broadcast for low-latency committed graph events
 - Cytoscape.js for rendering and laying out the graph
 - Zod for shared request and response validation
 - `qrcode.react` for the QR code
@@ -149,7 +149,8 @@ never present it as a factual allegation.
 Use one Next.js repository and one deployment. Next.js route handlers are the
 backend. The Supabase service-role key is server-only. Browser clients receive
 read-only access needed for graph loading and Realtime; they never write tables
-directly.
+directly. Vercel handlers do not hold presentation WebSocket connections;
+Supabase is the shared live-delivery layer across function instances.
 
 ## Shared domain contracts
 
@@ -205,6 +206,29 @@ interface GraphSnapshot {
   edges: GraphEdge[];
   serverTime: string;
 }
+
+interface DependencyCreatedEvent {
+  version: 1;
+  event: "dependency.created";
+  eventId: string;
+  sessionSlug: "demo";
+  round: number;
+  node: GraphNode;
+  edge: GraphEdge;
+  occurredAt: string;
+}
+
+type GraphEvent =
+  | DependencyCreatedEvent
+  | {
+      version: 1;
+      event: "graph.invalidated";
+      eventId: string;
+      sessionSlug: "demo";
+      round: number;
+      reason: "pause" | "resume" | "hide" | "restore" | "undo" | "reset";
+      occurredAt: string;
+    };
 
 interface ContributionRequest {
   anonymousClientId: string;
@@ -269,7 +293,14 @@ Create an atomic PostgreSQL function for audience submission. It validates that
 the session is open, the source is active, the contributor has not submitted in
 the round, the round contains fewer than 150 audience dependencies, and the edge
 is not a self-dependency or duplicate. It normalizes/upserts the target
-organization, inserts the dependency, and returns both identifiers.
+organization, inserts the dependency, calls `realtime.send()` with the canonical
+`DependencyCreatedEvent`, and returns the canonical node and edge. The row write
+and Realtime-message insert happen in the same transaction. A rollback therefore
+persists neither the dependency nor its live event.
+
+Admin mutations emit `graph.invalidated` from their database transaction. They
+do not carry full graph state because the presentation refetches after these
+less frequent actions.
 
 Reset increments `current_round`; it does not delete old data. Graph reads return
 seed dependencies plus active dependencies from the current round. Nodes not
@@ -285,7 +316,9 @@ load, after Realtime invalidations, and during polling fallback.
 ### `POST /api/sessions/demo/dependencies`
 
 Accepts `ContributionRequest`. Hash `anonymousClientId` with a server secret
-before storage. Return:
+before storage. The handler awaits the atomic database function; it does not use
+a fire-and-forget persistence promise. On success it returns the same canonical
+node and edge included in the Broadcast event. Return:
 
 - `201` with dependency and target organization IDs
 - `400` invalid input or self-dependency
@@ -311,6 +344,40 @@ the round and reopens the session.
 Accepts `{ status: "active" | "hidden" }`, requires admin authentication, and
 only modifies a current-round non-seed dependency.
 
+## Live delivery and persistence
+
+Use one Realtime topic per session and round:
+`sovereignty:demo:round:<round>`. The presentation subscribes to Broadcast over
+WebSocket before showing a healthy/live indicator.
+
+The dependency flow is:
+
+1. A phone posts `ContributionRequest` to the Next.js endpoint.
+2. The endpoint validates the request and calls the atomic database function.
+3. PostgreSQL inserts/reuses the target organization, inserts the dependency,
+   and inserts its `dependency.created` Broadcast message in one transaction.
+4. Once committed, Supabase delivers that event to the presentation channel.
+5. The presentation validates `GraphEvent`, inserts the canonical node/edge into
+   local graph state immediately, calculates exposure, and runs the reveal.
+6. The presentation schedules a debounced `GET` snapshot reconciliation. The
+   database snapshot always wins if local and persistent state differ.
+7. The phone receives the canonical API response and shows success.
+
+Broadcast and the HTTP response may arrive in either order; they share the same
+dependency/event identifiers and must be idempotent. The presentation keeps a
+bounded set of processed event IDs and deduplicates nodes/edges by ID.
+
+For this no-login sprint demo, use a public receive channel. Browser UI never
+sends Broadcast events, but public channels are not an authorization boundary.
+Consequently every event is treated as an acceleration hint and reconciled with
+the authoritative database immediately. A production version must use
+authenticated private channels with receive-only Realtime RLS policies.
+
+At initial load, round change, reconnect, invalidation event, malformed event,
+or sequence uncertainty, fetch a complete `GraphSnapshot`. If Realtime is not
+subscribed, poll every three seconds. Stop fallback polling after a successful
+subscription and reconciliation.
+
 ## Graph behavior
 
 - Treat an edge as directed from the depending organization to its dependency.
@@ -320,8 +387,9 @@ only modifies a current-round non-seed dependency.
 - `unknown` is visually unresolved but does not trigger an exposure warning.
 - For each reachable external node, reconstruct its shortest root path from the
   predecessor map.
-- Compare previous and next graph snapshots. If a new reachable external node
-  appears, animate its shortest path; otherwise update without a reveal banner.
+- Compare previous and next committed graph states, whether received by Broadcast
+  or snapshot. If a new reachable external node appears, animate its shortest
+  path; otherwise update without a reveal banner.
 - Handle cycles with a visited set and never assume the graph is a tree.
 
 ## Validation and safety
@@ -332,6 +400,9 @@ only modifies a current-round non-seed dependency.
 - Render all audience strings as text. Never use untrusted HTML.
 - Do not persist raw browser UUIDs or IP addresses.
 - RLS allows public reads needed by the demo and denies anonymous writes.
+- Validate every live payload with the shared `GraphEvent` Zod schema.
+- Realtime is never the durable source of truth; reconnect and recovery always
+  use `GraphSnapshot`.
 - The service-role key, admin password, hash secret, and auth secret remain in
   server environment variables only.
 - The 50/50 form option is a demonstration mechanic, not a security boundary;
@@ -371,6 +442,11 @@ Merge order:
 - Every external jurisdiction triggers exposure when reachable.
 - Input normalization catches equivalent company names and duplicate edges.
 - Contribution validation covers all documented status codes.
+- A successful transaction stores the dependency and emits exactly one matching
+  `DependencyCreatedEvent`; a rollback does neither.
+- Repeated event IDs and edge IDs are applied idempotently.
+- Invalid, wrong-round, and unsupported-version events trigger reconciliation
+  without changing durable graph state.
 - Admin-cookie validation rejects missing, expired, malformed, and invalid
   signatures.
 - Form variants expose the correct jurisdiction options.
@@ -390,6 +466,8 @@ Merge order:
   the same browser contribute in the new round.
 - Refresh presentation and reconstruct current state.
 - Simulate Realtime loss and verify polling fallback.
+- Deliver a live event followed by its snapshot and verify only one node, edge,
+  toast, and reveal are rendered.
 - Render untrusted HTML-like company text harmlessly.
 
 ### Rehearsal
@@ -416,4 +494,3 @@ CONTRIBUTOR_HASH_SECRET=
 
 No variable may have a functional fallback in production. `.env.example`
 contains names and descriptions only, never real values.
-

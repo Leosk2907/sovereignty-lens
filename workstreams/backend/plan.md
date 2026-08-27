@@ -14,7 +14,8 @@ ready.
 - Project/tooling configuration and environment validation
 - Shared Zod schemas and TypeScript contracts
 - Supabase client factories and generated database types
-- Database migrations, seed migration, indexes, RLS, and submission function
+- Database migrations, seed migration, indexes, RLS, atomic submission, and
+  database-backed Broadcast
 - Public graph and contribution route handlers
 - Admin authentication and action route handlers
 - Backend unit/integration tests
@@ -32,18 +33,22 @@ Do not implement the audience, Cytoscape, or admin page UI.
 4. Implement the exact shared contracts from the root plan with Zod schemas.
 5. Add deterministic fixture builders for one seeded graph and API errors.
 6. Initialize Supabase and create the three tables, constraints, indexes,
-   timestamp behavior, RLS policies, and Realtime publication.
+   timestamp behavior, RLS policies, and Realtime Broadcast configuration.
 7. Seed one `demo` session rooted at `European Digital Services Agency`, three
    fictional European suppliers, and connected seed dependencies.
-8. Implement the transactional submission SQL function and test concurrent,
-   duplicate, paused, full, and new-round behavior.
-9. Implement graph loading with seed plus current-round active dependencies.
-10. Implement all route handlers and map domain errors to the specified HTTP
+8. Implement the transactional submission SQL function. In the same transaction,
+   insert the dependency and call `realtime.send()` with a versioned canonical
+   `dependency.created` payload on `sovereignty:demo:round:<round>`.
+9. Emit `graph.invalidated` from admin mutation transactions for pause, resume,
+   hide, restore, undo, and reset.
+10. Implement graph loading with seed plus current-round active dependencies.
+11. Implement all route handlers and map domain errors to the specified HTTP
     status codes.
-11. Implement constant-time presenter-password comparison, signed cookie
+12. Implement constant-time presenter-password comparison, signed cookie
     creation/verification, and server-only contributor hashing.
-12. Add backend tests and a GitHub Actions workflow.
-13. Create Supabase/Vercel preview projects, apply migrations, configure secrets,
+13. Add backend tests, including rollback behavior, and a GitHub Actions
+    workflow.
+14. Create Supabase/Vercel preview projects, apply migrations, configure secrets,
     and publish the preview URL for other workstreams.
 
 ## Seed scenario
@@ -67,6 +72,10 @@ participation.
 - Fixtures conform to the same Zod schemas used by production handlers.
 - Every endpoint returns a consistent JSON success/error envelope.
 - Submission is atomic under concurrent requests.
+- A committed submission produces exactly one versioned Broadcast event with
+  identifiers matching the API response and stored rows.
+- A rolled-back submission produces neither a stored dependency nor a live
+  event.
 - Anonymous database clients cannot insert, update, or delete.
 - Service-role and presenter secrets never enter client bundles or logs.
 - Preview deployment returns the seeded graph and accepts a valid dependency.
@@ -77,4 +86,3 @@ participation.
 Provide the preview URL, migration command, environment variable checklist,
 fixture import path, sample requests/responses, known limitations, and commit SHA
 to the integration owner.
-
